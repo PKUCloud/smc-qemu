@@ -31,10 +31,6 @@
 #include "sysemu/block-backend.h"
 #include <sys/ioctl.h>
 
-#ifndef rtnl_tc_get_ops
-extern struct rtnl_tc_ops * rtnl_tc_get_ops(struct rtnl_tc *);
-#endif
-
 static void flush_trace_buffer(void) {
 #ifdef CONFIG_TRACE_SIMPLE
     st_flush_trace_buffer();

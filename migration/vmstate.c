@@ -8,6 +8,8 @@
 #include "trace.h"
 #include "qjson.h"
 
+#include "smc-debug.h"
+
 static void vmstate_subsection_save(QEMUFile *f, const VMStateDescription *vmsd,
                                     void *opaque, QJSON *vmdesc);
 static int vmstate_subsection_load(QEMUFile *f, const VMStateDescription *vmsd,
@@ -77,6 +79,7 @@ int vmstate_load_state(QEMUFile *f, const VMStateDescription *vmsd,
     VMStateField *field = vmsd->fields;
     int ret = 0;
 
+    SMC_LOG(GEN, "version_id=%d", version_id);
     trace_vmstate_load_state(vmsd->name, version_id);
     if (version_id > vmsd->version_id) {
         trace_vmstate_load_state_end(vmsd->name, "too new", -EINVAL);

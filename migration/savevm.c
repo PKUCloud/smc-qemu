@@ -49,6 +49,8 @@
 #include "block/snapshot.h"
 #include "block/qapi.h"
 
+#include "smc-debug.h"
+
 
 #ifndef ETH_P_RARP
 #define ETH_P_RARP 0x8035
@@ -580,8 +582,10 @@ static int vmstate_load(QEMUFile *f, SaveStateEntry *se, int version_id)
 {
     trace_vmstate_load(se->idstr, se->vmsd ? se->vmsd->name : "(old)");
     if (!se->vmsd) {         /* Old style */
+        SMC_LOG(GEN, "entry %s use old style load", se->idstr);
         return se->ops->load_state(f, se->opaque, version_id);
     }
+    SMC_LOG(GEN, "entry %s use new style load", se->idstr);
     return vmstate_load_state(f, se->vmsd, se->opaque, version_id);
 }
 
@@ -665,6 +669,7 @@ static bool check_section_footer(QEMUFile *f, SaveStateEntry *se)
     uint32_t read_section_id;
 
     if (skip_section_footers) {
+        SMC_LOG(GEN, "entry %s skip section footers", se->idstr);
         /* No footer to check */
         return true;
     }
@@ -676,7 +681,12 @@ static bool check_section_footer(QEMUFile *f, SaveStateEntry *se)
         return false;
     }
 
+    SMC_LOG(STREAM, "read section_footer mark %u", read_mark);
+
     read_section_id = qemu_get_be32(f);
+
+    SMC_LOG(STREAM, "read section_footer section_id %u", read_section_id);
+
     if (read_section_id != se->section_id) {
         error_report("Mismatched section id in footer for %s -"
                      " read 0x%x expected 0x%x",
@@ -980,6 +990,8 @@ static SaveStateEntry *find_se(const char *idstr, int instance_id)
             return se;
         /* Migrating from an older version? */
         if (strstr(se->idstr, idstr) && se->compat) {
+            SMC_LOG(GEN, "warning: migrating from an older version idstr=%s",
+                   idstr);
             if (!strcmp(se->compat->idstr, idstr) &&
                 (instance_id == se->compat->instance_id ||
                  instance_id == se->alias_id))
@@ -1015,6 +1027,7 @@ int qemu_loadvm_state(QEMUFile *f)
     int ret;
     int file_error_after_eof = -1;
 
+    SMC_LOG(GEN, "starts");
     if (qemu_savevm_state_blocked(&local_err)) {
         error_report_err(local_err);
         return -EINVAL;
@@ -1026,6 +1039,8 @@ int qemu_loadvm_state(QEMUFile *f)
         return -EINVAL;
     }
 
+    SMC_LOG(STREAM, "read file_magic %u", v);
+
     v = qemu_get_be32(f);
     if (v == QEMU_VM_FILE_VERSION_COMPAT) {
         error_report("SaveVM v2 format is obsolete and don't work anymore");
@@ -1036,6 +1051,8 @@ int qemu_loadvm_state(QEMUFile *f)
         return -ENOTSUP;
     }
 
+    SMC_LOG(STREAM, "read file_version %u", v);
+
     while ((section_type = qemu_get_byte(f)) != QEMU_VM_EOF) {
         uint32_t instance_id, version_id, section_id;
         SaveStateEntry *se;
@@ -1043,18 +1060,23 @@ int qemu_loadvm_state(QEMUFile *f)
         char idstr[256];
 
         trace_qemu_loadvm_state_section(section_type);
+        SMC_LOG(STREAM, "read section_type %u", section_type);
         switch (section_type) {
         case QEMU_VM_SECTION_START:
         case QEMU_VM_SECTION_FULL:
             /* Read section start */
             section_id = qemu_get_be32(f);
+            SMC_LOG(STREAM, "read session_id %u", section_id);
             if (!qemu_get_counted_string(f, idstr)) {
                 error_report("Unable to read ID string for section %u",
                             section_id);
                 return -EINVAL;
             }
+            SMC_LOG(STREAM, "read idstr %s", idstr);
             instance_id = qemu_get_be32(f);
+            SMC_LOG(STREAM, "read instance_id %u", instance_id);
             version_id = qemu_get_be32(f);
+            SMC_LOG(STREAM, "read version_id %u", version_id);
 
             trace_qemu_loadvm_state_section_startfull(section_id, idstr,
                                                       instance_id, version_id);
@@ -1083,6 +1105,9 @@ int qemu_loadvm_state(QEMUFile *f)
             le->version_id = version_id;
             QLIST_INSERT_HEAD(&mis->loadvm_handlers, le, entry);
 
+            SMC_LOG(GEN, "add LoadStateEntry with idstr=%s to mis_current",
+                    idstr);
+
             ret = vmstate_load(f, le->se, le->version_id);
             if (ret < 0) {
                 error_report("error while loading state for instance 0x%x of"
@@ -1097,6 +1122,8 @@ int qemu_loadvm_state(QEMUFile *f)
         case QEMU_VM_SECTION_PART:
         case QEMU_VM_SECTION_END:
             section_id = qemu_get_be32(f);
+
+            SMC_LOG(STREAM, "read session_id %u", section_id);
 
             trace_qemu_loadvm_state_section_partend(section_id);
             QLIST_FOREACH(le, &mis->loadvm_handlers, entry) {

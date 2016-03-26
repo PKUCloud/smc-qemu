@@ -39,6 +39,8 @@
 #include "exec/ram_addr.h"
 #include "qemu/rcu_queue.h"
 
+#include "smc-debug.h"
+
 #ifdef DEBUG_MIGRATION_RAM
 #define DPRINTF(fmt, ...) \
     do { fprintf(stdout, "migration_ram: " fmt, ## __VA_ARGS__); } while (0)
@@ -1419,6 +1421,7 @@ void migrate_decompress_threads_create(void)
     compressed_data_buf = g_malloc0(compressBound(TARGET_PAGE_SIZE));
     quit_decomp_thread = false;
     for (i = 0; i < thread_count; i++) {
+        SMC_LOG(INIT, "create decompress thread #%d", i);
         qemu_mutex_init(&decomp_param[i].mutex);
         qemu_cond_init(&decomp_param[i].cond);
         decomp_param[i].compbuf = g_malloc0(compressBound(TARGET_PAGE_SIZE));
@@ -1483,6 +1486,7 @@ static int ram_load(QEMUFile *f, void *opaque, int version_id)
 
     seq_iter++;
 
+    SMC_LOG(GEN, "version_id=%d seq_iter=%" PRIu64, version_id, seq_iter);
     if (version_id != 4) {
         ret = -EINVAL;
     }
@@ -1505,6 +1509,7 @@ static int ram_load(QEMUFile *f, void *opaque, int version_id)
         switch (flags & ~RAM_SAVE_FLAG_CONTINUE) {
         case RAM_SAVE_FLAG_MEM_SIZE:
             /* Synchronize RAM block list */
+            SMC_LOG(STREAM, "resize RAMBlocks");
             total_ram_bytes = addr;
             while (!ret && total_ram_bytes) {
                 RAMBlock *block;
@@ -1562,6 +1567,7 @@ static int ram_load(QEMUFile *f, void *opaque, int version_id)
                 qemu_get_buffer(f, host, TARGET_PAGE_SIZE);
             break;
         case RAM_SAVE_FLAG_COMPRESS_PAGE:
+            SMC_LOG(GEN, "warning: RAM_SAVE_FLAG_COMPRESS_PAGE");
             host = host_from_stream_offset(f, addr, flags);
             if (!host) {
                 error_report("Invalid RAM offset " RAM_ADDR_FMT, addr);
@@ -1579,6 +1585,7 @@ static int ram_load(QEMUFile *f, void *opaque, int version_id)
             decompress_data_with_multi_threads(compressed_data_buf, host, len);
             break;
         case RAM_SAVE_FLAG_XBZRLE:
+            SMC_LOG(GEN, "warning: RAM_SAVE_FLAG_XBZRLE");
             host = host_from_stream_offset(f, addr, flags);
             if (!host) {
                 error_report("Illegal RAM offset " RAM_ADDR_FMT, addr);

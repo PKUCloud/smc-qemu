@@ -27,6 +27,8 @@
 #include "qmp-commands.h"
 #include "trace.h"
 
+#include "smc-debug.h"
+
 #define MAX_THROTTLE  (32 << 20)      /* Migration speed throttling */
 
 /* Amount of time to allocate to each "chunk" of bandwidth-throttled
@@ -86,6 +88,8 @@ MigrationIncomingState *migration_incoming_state_new(QEMUFile* f)
     mis_current->file = f;
     QLIST_INIT(&mis_current->loadvm_handlers);
 
+    SMC_LOG(INIT, "create a new incoming state");
+
     return mis_current;
 }
 
@@ -140,6 +144,7 @@ static void process_incoming_migration_co(void *opaque)
     Error *local_err = NULL;
     int ret;
 
+    SMC_LOG(INIT, "coroutine starts");
     migration_incoming_state_new(f);
 
     ret = qemu_loadvm_state(f);

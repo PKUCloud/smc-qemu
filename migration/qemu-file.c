@@ -32,6 +32,8 @@
 #include "migration/qemu-file-internal.h"
 #include "trace.h"
 
+#include "smc-debug.h"
+
 /*
  * Stop a file from being read/written - not all backing files can do this
  * typically only sockets can.
@@ -201,6 +203,8 @@ int ram_control_load_page(QEMUFile *f, void *host_addr, long size)
 
         return ret;
     }
+
+    SMC_LOG(GEN, "load_page not supported");
 
     return RAM_LOAD_CONTROL_NOT_SUPP;
 }

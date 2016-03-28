@@ -1840,6 +1840,7 @@ static int qemu_rdma_exchange_send(RDMAContext *rdma, RDMAControlHeader *head,
      */
     if (rdma->control_ready_expected) {
         RDMAControlHeader resp;
+        SMC_LOG(GEN, "wait for RDMA_CONTROL_READY msg on RDMA_WRID_READY");
         ret = qemu_rdma_exchange_get_response(rdma,
                                     &resp, RDMA_CONTROL_READY, RDMA_WRID_READY);
         if (ret < 0) {
@@ -1851,6 +1852,7 @@ static int qemu_rdma_exchange_send(RDMAContext *rdma, RDMAControlHeader *head,
      * If the user is expecting a response, post a WR in anticipation of it.
      */
     if (resp) {
+        SMC_LOG(GEN, "post a Receive Request on RDMA_WRID_DATA");
         ret = qemu_rdma_post_recv_control(rdma, RDMA_WRID_DATA);
         if (ret) {
             ERROR(NULL, "posting extra control recv for anticipated result!");
@@ -1866,6 +1868,7 @@ static int qemu_rdma_exchange_send(RDMAContext *rdma, RDMAControlHeader *head,
         ERROR(NULL, "posting first control recv!");
         return ret;
     }
+    SMC_LOG(GEN, "post a Receive Request on RDMA_WRID_READY");
 
     /*
      * Deliver the control message that was requested.
@@ -1877,6 +1880,8 @@ static int qemu_rdma_exchange_send(RDMAContext *rdma, RDMAControlHeader *head,
         return ret;
     }
 
+    SMC_LOG(GEN, "send a control msg");
+
     /*
      * If we're expecting a response, block and wait for it.
      */
@@ -1884,6 +1889,7 @@ static int qemu_rdma_exchange_send(RDMAContext *rdma, RDMAControlHeader *head,
         if (callback) {
             trace_qemu_rdma_exchange_send_issue_callback();
             ret = callback(rdma);
+            SMC_LOG(GEN, "call callback func");
             if (ret < 0) {
                 return ret;
             }
@@ -1896,6 +1902,7 @@ static int qemu_rdma_exchange_send(RDMAContext *rdma, RDMAControlHeader *head,
         if (ret < 0) {
             return ret;
         }
+        SMC_LOG(GEN, "recv response on RDMA_WRID_DATA");
 
         qemu_rdma_move_header(rdma, RDMA_WRID_DATA, resp);
         if (resp_idx) {
@@ -1993,7 +2000,7 @@ static int qemu_rdma_write(QEMUFile *f, RDMAContext *rdma,
     struct ibv_sge sge;
     struct ibv_send_wr send_wr = { 0 };
     struct ibv_send_wr *bad_wr;
-    int reg_result_idx, ret, count = 0;
+    int reg_result_idx, ret;
     bool copy;
     RDMALocalContext *lc;
     RDMARegister reg;
@@ -2033,26 +2040,16 @@ retry:
     }
 
     while (test_bit(src->chunk_idx, src->block->transit_bitmap)) {
-        (void)count;
-
-        /*
-        trace_qemu_rdma_write_one_block(count++, src->current_block_index, src->chunk_idx,
-                 (uint64_t) sge.addr, src->current_length, rdma->nb_sent,
-                 lc->nb_sent, src->block->nb_chunks, lc->id_str);
-        */
-
         ret = qemu_rdma_block_for_wrid(rdma, lc,
                                        RDMA_WRID_RDMA_WRITE_REMOTE, NULL);
 
         if (ret < 0) {
-            /*
             error_report("Failed to Wait for previous write to complete "
                     "block %d chunk %" PRIu64
                     " current_addr %" PRIu64 " len %" PRIu64
                     " left %d (per qp left %d) (%s)",
                     src->current_block_idx, src->chunk_idx, (uint64_t) src->addr,
                     src->current_length, rdma->nb_sent, lc->nb_sent, lc->id_str);
-            */
             return ret;
         }
     }
@@ -2064,6 +2061,8 @@ retry:
              * if the entire chunk is zero. If so, tell the other size to
              * memset() + madvise() the entire chunk without RDMA.
              */
+
+            SMC_LOG(GEN, "chunk %" PRIu64 " is not registered", src->chunk_idx);
 
             if (src->block->is_ram_block &&
                    can_use_buffer_find_nonzero_offset((void *)(uintptr_t)src->addr,
@@ -2081,11 +2080,7 @@ retry:
                 head.len = sizeof(comp);
                 head.type = RDMA_CONTROL_COMPRESS;
 
-                /*
-                trace_qemu_rdma_write_one_zero(src->chunk_idx,
-                    src->current_length, src->current_block_idx, src->current_addr,
-                    lc->id_str);
-                */
+                SMC_LOG(GEN, "chunk is all zero, skip using RDMA");
 
                 compress_to_network(&comp);
                 ret = qemu_rdma_exchange_send(rdma, &head,
@@ -2094,6 +2089,7 @@ retry:
                 if (ret < 0) {
                     return -EIO;
                 }
+                SMC_LOG(GEN, "send RDMA_CONTROL_COMPRESS msg");
 
                 acct_update_position(f, src->current_length, true);
 
@@ -2104,6 +2100,8 @@ retry:
              * Otherwise, tell other side to register. (Only for remote RDMA)
              */
             if (!dest) {
+                SMC_LOG(GEN, "reqeust register chunks in block %d",
+                        src->current_block_idx);
                 reg.current_block_idx = src->current_block_idx;
                 if (src->block->is_ram_block) {
                     reg.key.current_addr = src->current_addr;
@@ -2112,18 +2110,14 @@ retry:
                 }
                 reg.chunks = src->chunks;
 
-                /*
-                trace_qemu_rdma_write_one_sendreg(src->chunk_idx,
-                    src->current_length, src->current_block_idx, src->current_addr,
-                    lc->id_str);
-                */
-
                 register_to_network(&reg);
                 ret = qemu_rdma_exchange_send(rdma, &head, (uint8_t *) &reg,
                                         &resp, &reg_result_idx, NULL);
                 if (ret < 0) {
                     return ret;
                 }
+                SMC_LOG(GEN, "send RDMA_CONTROL_REGISTER_REQUEST and get "
+                        "response");
             }
 
             /* try to overlap this single registration with the one we sent. */
@@ -2132,17 +2126,13 @@ retry:
                 error_report("cannot get lkey!");
                 return -EINVAL;
             }
+            SMC_LOG(GEN, "get L_Key");
 
             if (!dest) {
                 reg_result = (RDMARegisterResult *)
                         rdma->wr_data[reg_result_idx].control_curr;
 
                 network_to_result(reg_result);
-
-                /*
-                trace_qemu_rdma_write_one_recvregres(src->block->remote_keys[src->chunk_idx],
-                    reg_result->rkey, src->chunk_idx, lc->id_str);
-                */
 
                 src->block->remote_keys[src->chunk_idx] = reg_result->rkey;
                 src->block->remote_host_addr = reg_result->host_addr;
@@ -2154,6 +2144,7 @@ retry:
                 error_report("cannot get lkey!");
                 return -EINVAL;
             }
+            SMC_LOG(GEN, "get L_key");
         }
 
         send_wr.wr.rdma.rkey = src->block->remote_keys[src->chunk_idx];
@@ -2209,7 +2200,7 @@ retry:
     ret = ibv_post_send(lc->qp, &send_wr, &bad_wr);
 
     if (ret == ENOMEM) {
-        //trace_qemu_rdma_write_one_queue_full();
+        SMC_LOG(GEN, "warning: ibv_post_send failed because queue is full");
         ret = qemu_rdma_block_for_wrid(rdma, lc,
                                        RDMA_WRID_RDMA_WRITE_REMOTE, NULL);
         if (ret < 0) {
@@ -2220,6 +2211,7 @@ retry:
         goto retry;
 
     } else if (ret > 0) {
+        SMC_LOG(GEN, "error: ibv_post_send failed");
         perror("rdma migration: post rdma write failed");
         return -ret;
     }
@@ -2233,8 +2225,6 @@ retry:
     rdma->total_writes++;
     rdma->nb_sent++;
     lc->nb_sent++;
-
-    //trace_qemu_rdma_write_flush(rdma->nb_sent, lc->nb_sent, lc->id_str);
 
     src->current_length = 0;
     src->current_addr = 0;
@@ -2527,6 +2517,7 @@ static int qemu_rdma_device_init(RDMAContext *rdma, Error **errp,
         } else {
             ret = rdma_resolve_addr(lc->cm_id, NULL, e->ai_dst_addr,
                 RDMA_RESOLVE_TIMEOUT_MS);
+            SMC_LOG(INIT, "lc->cm_id[%p] resolve addr", lc->cm_id);
         }
 
         if (ret) {
@@ -2566,6 +2557,8 @@ static int qemu_rdma_device_init(RDMAContext *rdma, Error **errp,
             goto err_device_init_bind_addr;
         }
 
+        SMC_LOG(INIT, "get RDMA_CM_EVENT_ADDR_RESOLVED cm_event");
+
         rdma_ack_cm_event(cm_event);
 
         /* resolve route */
@@ -2574,6 +2567,7 @@ static int qemu_rdma_device_init(RDMAContext *rdma, Error **errp,
             ERROR(errp, "could not resolve rdma route");
             goto err_device_init_bind_addr;
         }
+        SMC_LOG(INIT, "resolve_route for lc->cm_id[%p]", lc->cm_id);
 
         ret = rdma_get_cm_event(lc->channel, &cm_event);
         if (ret) {
@@ -2588,6 +2582,8 @@ static int qemu_rdma_device_init(RDMAContext *rdma, Error **errp,
             ret = -EINVAL;
             goto err_device_init_bind_addr;
         }
+
+        SMC_LOG(INIT, "get RDMA_CM_EVENT_ROUTE_RESOLVED cm_event");
 
         lc->verbs = lc->cm_id->verbs;
         printf("verbs: %p (%s)\n", lc->verbs, lc->id_str);
@@ -2717,6 +2713,8 @@ static int qemu_rdma_connect_finish(RDMAContext *rdma,
         goto err;
     }
 
+    SMC_LOG(INIT, "get_cm_event[%p] RDMA_CM_EVENT_ESTABLISHED", cm_event);
+
     /*
      * The rdmacm "private data area" may contain information from the receiver,
      * just as we may have done the same from the sender side. If so, we cannot
@@ -2783,12 +2781,14 @@ static int qemu_rdma_connect(RDMAContext *rdma, Error **errp)
         perror("rdma_connect");
         goto err_rdma_source_connect;
     }
+    SMC_LOG(INIT, "rdma_connect on lc_remote.cm_id[%p]", rdma->lc_remote.cm_id);
 
     ret = qemu_rdma_connect_finish(rdma, &rdma->lc_remote, errp, &cm_event);
 
     if (ret) {
         goto err_rdma_source_connect;
     }
+    SMC_LOG(INIT, "lc_remote RDMA connected");
 
     memcpy(&cap, cm_event->param.conn.private_data, sizeof(cap));
     network_to_caps(&cap);
@@ -2817,13 +2817,21 @@ static int qemu_rdma_connect(RDMAContext *rdma, Error **errp)
     trace_qemu_rdma_connect_pin_all_outcome(rdma->pin_all ? "enabled" : "disabled");
     trace_qemu_rdma_connect_keepalive_outcome(rdma->do_keepalive ? "enabled" : "disabled");
 
+    SMC_LOG(INIT, "pin_all=%s keepalive=%s keepalive_rkey=%x keepalive_addr=%"
+            PRIu64, rdma->pin_all ? "enabled" : "disabled",
+            rdma->do_keepalive ? "enabled" : "disabled",
+            rdma->keepalive_rkey, rdma->keepalive_addr);
+
     rdma_ack_cm_event(cm_event);
+    SMC_LOG(INIT, "ack_cm_event[%p]", cm_event);
 
     ret = qemu_rdma_post_recv_control(rdma, RDMA_WRID_READY);
     if (ret) {
         ERROR(errp, "posting second control recv!");
         goto err_rdma_source_connect;
     }
+
+    SMC_LOG(INIT, "post RR of RDMA_WRID_READY");
 
     rdma->control_ready_expected = 1;
     rdma->nb_sent = 0;
@@ -3020,6 +3028,7 @@ static int qemu_rdma_put_buffer(void *opaque, const uint8_t *buf,
             SET_ERROR(rdma, ret);
             return ret;
         }
+        SMC_LOG(GEN, "send one msg len=%zu", r->len);
 
         data += r->len;
     }
@@ -4092,6 +4101,8 @@ static int rdma_init_local(RDMAContext *rdma)
         return 0;
     }
 
+    SMC_LOG(INIT, "RDMA_COPY is enabled. Initialize local RDMA ports");
+
     rdma->lc_dest.port = 0;
     rdma->lc_src.host = g_malloc(100);
     rdma->lc_dest.host = g_malloc(100);
@@ -4111,6 +4122,9 @@ static int rdma_init_local(RDMAContext *rdma)
 
     rdma->lc_src.port = ntohs(rdma_get_src_port(rdma->lc_dest.listen_id));
 
+    SMC_LOG(INIT, "lc_dest bind and listen to %s:%d", rdma->lc_dest.host,
+            rdma->lc_src.port);
+
     trace_rdma_init_local(rdma->lc_src.port);
 
     /* resolve */
@@ -4121,12 +4135,15 @@ static int rdma_init_local(RDMAContext *rdma)
         goto err;
     }
 
+    SMC_LOG(INIT, "lc_src resolve destination");
+
     /* async connect */
     ret = rdma_connect(rdma->lc_src.cm_id, &cp_source);
     if (ret) {
         ERROR(NULL, "connect local device source");
         goto err;
     }
+    SMC_LOG(INIT, "lc_src initiate a connection request");
 
     /* async accept */
     ret = qemu_rdma_accept_start(rdma, &rdma->lc_dest, NULL);
@@ -4134,6 +4151,7 @@ static int rdma_init_local(RDMAContext *rdma)
         ERROR(NULL, "starting accept for local connection");
         goto err;
     }
+    SMC_LOG(INIT, "lc_dest prepare for accepting an incoming request");
 
     /* accept */
     ret = rdma_accept(rdma->lc_dest.cm_id, &cp_dest);
@@ -4141,6 +4159,7 @@ static int rdma_init_local(RDMAContext *rdma)
         ERROR(NULL, "rdma_accept returns %d (%s)!", ret, rdma->lc_dest.id_str);
         goto err;
     }
+    SMC_LOG(INIT, "lc_dest accept a request");
 
     /* ack accept */
     ret = qemu_rdma_connect_finish(rdma, &rdma->lc_src, NULL, NULL);
@@ -4148,6 +4167,7 @@ static int rdma_init_local(RDMAContext *rdma)
         ERROR(NULL, "finish local connection with source");
         goto err;
     }
+    SMC_LOG(INIT, "lc_src connection established");
 
     /* established */
     ret = qemu_rdma_accept_finish(rdma, &rdma->lc_dest);
@@ -4156,6 +4176,7 @@ static int rdma_init_local(RDMAContext *rdma)
         ERROR(NULL, "finish accept connection");
         goto err;
     }
+    SMC_LOG(INIT, "lc_dest connection established");
 
     return 0;
 err:

@@ -358,6 +358,7 @@ void migrate_compress_threads_create(void)
     if (!migrate_use_compression()) {
         return;
     }
+    SMC_LOG(INIT, "create compress threads");
     quit_comp_thread = false;
     compression_switch = true;
     thread_count = migrate_compress_threads();

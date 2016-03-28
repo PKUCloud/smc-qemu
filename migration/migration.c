@@ -433,6 +433,7 @@ static void migrate_fd_cleanup(void *opaque)
 {
     MigrationState *s = opaque;
 
+    SMC_LOG(INIT, "going to clean up migration structrues");
     if(s->cleanup_bh) {
         qemu_bh_delete(s->cleanup_bh);
         s->cleanup_bh = NULL;
@@ -817,6 +818,8 @@ static void *migration_thread(void *opaque)
     s->setup_time = qemu_clock_get_ms(QEMU_CLOCK_HOST) - setup_start;
     migrate_set_state(s, MIGRATION_STATUS_SETUP, MIGRATION_STATUS_ACTIVE);
 
+    SMC_LOG(GEN, "status MIGRATION_STATUS_SETUP -> MIGRATION_STATUS_ACTIVE");
+
     while (s->state == MIGRATION_STATUS_ACTIVE) {
         int64_t current_time;
         uint64_t pending_size;
@@ -927,14 +930,20 @@ void migrate_fd_connect(MigrationState *s)
     s->expected_downtime = max_downtime/1000000;
     s->cleanup_bh = qemu_bh_new(migrate_fd_cleanup, s);
 
+    SMC_LOG(INIT, "create QEMUBH MigrationState->cleanup_bh");
+
     qemu_file_set_rate_limit(s->file,
                              s->bandwidth_limit / XFER_LIMIT_RATIO);
+    SMC_LOG(INIT, "set file rate limit for control channel to %" PRIi64,
+            s->bandwidth_limit / XFER_LIMIT_RATIO);
 
     /* Notify before starting migration thread */
     notifier_list_notify(&migration_state_notifiers, s);
+    SMC_LOG(INIT, "notify migration_state_notifiers");
 
     migrate_compress_threads_create();
     s->thread = g_malloc0(sizeof(*s->thread));
+    SMC_LOG(INIT, "create migration thread");
     qemu_thread_create(s->thread, "migration", migration_thread, s,
                        QEMU_THREAD_JOINABLE);
 }

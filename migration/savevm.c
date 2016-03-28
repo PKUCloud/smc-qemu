@@ -630,6 +630,7 @@ void savevm_skip_section_footers(void)
 static void save_section_header(QEMUFile *f, SaveStateEntry *se,
                                 uint8_t section_type)
 {
+    SMC_LOG(GEN, "section_type=%u section_id=%d", section_type, se->section_id);
     qemu_put_byte(f, section_type);
     qemu_put_be32(f, se->section_id);
 
@@ -652,6 +653,7 @@ static void save_section_header(QEMUFile *f, SaveStateEntry *se,
 static void save_section_footer(QEMUFile *f, SaveStateEntry *se)
 {
     if (!skip_section_footers) {
+        SMC_LOG(GEN, "section_id=%d", se->section_id);
         qemu_put_byte(f, QEMU_VM_SECTION_FOOTER);
         qemu_put_be32(f, se->section_id);
     }
@@ -726,6 +728,7 @@ void qemu_savevm_state_begin(QEMUFile *f,
     int ret;
 
     trace_savevm_state_begin();
+    SMC_LOG(GEN, "starts");
     QTAILQ_FOREACH(se, &savevm_state.handlers, entry) {
         if (!se->ops || !se->ops->set_params) {
             continue;
@@ -742,6 +745,7 @@ void qemu_savevm_state_begin(QEMUFile *f,
                 continue;
             }
         }
+        SMC_LOG(GEN, "handling se:%s", se->idstr);
         save_section_header(f, se, QEMU_VM_SECTION_START);
 
         ret = se->ops->save_live_setup(f, se->opaque);
@@ -775,9 +779,12 @@ int qemu_savevm_state_iterate(QEMUFile *f)
             }
         }
         if (qemu_file_rate_limit(f)) {
+            SMC_LOG(GEN, "file rate limit for %s", se->idstr);
             return 0;
         }
         trace_savevm_section_start(se->idstr, se->section_id);
+
+        SMC_LOG(GEN, "idstr=%s section_id=%d", se->idstr, se->section_id);
 
         save_section_header(f, se, QEMU_VM_SECTION_PART);
 
@@ -793,6 +800,7 @@ int qemu_savevm_state_iterate(QEMUFile *f)
                completion of the current stage. This serializes the migration
                and reduces the probability that a faster changing state is
                synchronized over and over again. */
+            SMC_LOG(GEN, "ops->save_live_iterate() not completed, break");
             break;
         }
     }
@@ -811,10 +819,10 @@ void qemu_savevm_state_complete(QEMUFile *f)
     int vmdesc_len;
     SaveStateEntry *se;
     int ret;
-    //uint64_t a_start, a_stop;
 
     trace_savevm_state_complete();
 
+    SMC_LOG(GEN, "starts");
     cpu_synchronize_all_states();
 
     QTAILQ_FOREACH(se, &savevm_state.handlers, entry) {
@@ -828,20 +836,21 @@ void qemu_savevm_state_complete(QEMUFile *f)
         }
         trace_savevm_section_start(se->idstr, se->section_id);
 
+        SMC_LOG(GEN, "handling idstr=%s section_id=%d", se->idstr,
+                se->section_id);
         save_section_header(f, se, QEMU_VM_SECTION_END);
 
-        //a_start = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
         ret = se->ops->save_live_complete(f, se->opaque);
-        //a_stop = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
-        //printf("complete: %s: %" PRIu64 "\n", se->idstr, a_stop - a_start);
         trace_savevm_section_end(se->idstr, se->section_id, ret);
         save_section_footer(f, se);
         if (ret < 0) {
+            SMC_LOG(GEN, "error: idstr=%s return %d", se->idstr, ret);
             qemu_file_set_error(f, ret);
             return;
         }
     }
 
+    SMC_LOG(GEN, "send VMDESC json");
     vmdesc = qjson_new();
     json_prop_int(vmdesc, "page_size", TARGET_PAGE_SIZE);
     json_start_array(vmdesc, "devices");
@@ -858,10 +867,7 @@ void qemu_savevm_state_complete(QEMUFile *f)
 
         save_section_header(f, se, QEMU_VM_SECTION_FULL);
 
-        //a_start = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
         vmstate_save(f, se, vmdesc);
-        //a_stop = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
-        //printf("save: %s: %" PRIu64 "\n", se->idstr, a_stop - a_start);
 
         json_end_object(vmdesc);
         trace_savevm_section_end(se->idstr, se->section_id, 0);
@@ -888,6 +894,7 @@ uint64_t qemu_savevm_state_pending(QEMUFile *f, uint64_t max_size)
 {
     SaveStateEntry *se;
     uint64_t ret = 0;
+    uint64_t tmp = 0;
 
     QTAILQ_FOREACH(se, &savevm_state.handlers, entry) {
         if (!se->ops || !se->ops->save_live_pending) {
@@ -898,7 +905,9 @@ uint64_t qemu_savevm_state_pending(QEMUFile *f, uint64_t max_size)
                 continue;
             }
         }
-        ret += se->ops->save_live_pending(f, se->opaque, max_size);
+        tmp = se->ops->save_live_pending(f, se->opaque, max_size);
+        ret += tmp;
+        SMC_LOG(GEN, "idstr=%s pending_size=%" PRIu64, se->idstr, tmp);
     }
     return ret;
 }

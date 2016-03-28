@@ -4,6 +4,8 @@
 
 #define DEBUG_SMC
 
+extern FILE *smc_log_file;
+
 #ifdef DEBUG_SMC
 enum {
     SMC_DB_GEN, SMC_DB_INIT, SMC_DB_STREAM,
@@ -13,12 +15,17 @@ static int smc_dbflags = SMC_DBBIT(GEN) | SMC_DBBIT(INIT) | SMC_DBBIT(STREAM);
 
 #define SMC_LOG(what, fmt, ...) do { \
     if (smc_dbflags & SMC_DBBIT(what)) { \
-        printf("[SMC]%s: " fmt "\n", __func__, \
+        fprintf(smc_log_file, "[SMC]%s: " fmt "\n", __func__, \
                ## __VA_ARGS__); } \
     } while (0)
 
 #else
 #define SMC_LOG(what, fmt, ...) do {} while (0)
 #endif
+
+#define SMC_ERR(fmt, ...) do { \
+    fprintf(stderr, "[SMC]error(%s): " fmt "\n", __func__, \
+            ## __VA_ARGS__); \
+    } while (0)
 
 #endif

@@ -516,6 +516,9 @@ static QemuOptsList qemu_fw_cfg_opts = {
     },
 };
 
+FILE *smc_log_file;
+const char *smc_log_file_name = "smc.log";
+
 /**
  * Get machine options
  *
@@ -2966,6 +2969,11 @@ int main(int argc, char **argv, char **envp)
     FILE *vmstate_dump_file = NULL;
     Error *main_loop_err = NULL;
 
+    if ((smc_log_file = fopen("smc.log", "w")) == NULL) {
+        fprintf(stderr, "[SMC]error: fail to open log file %s\n",
+                smc_log_file_name);
+        exit(1);
+    }
     qemu_init_cpu_loop();
     qemu_mutex_lock_iothread();
 
@@ -4638,6 +4646,11 @@ int main(int argc, char **argv, char **envp)
     bdrv_close_all();
     pause_all_vcpus();
     res_free();
+
+    if (smc_log_file) {
+        fclose(smc_log_file);
+    }
+
 #ifdef CONFIG_TPM
     tpm_cleanup();
 #endif

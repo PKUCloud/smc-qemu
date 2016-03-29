@@ -2928,6 +2928,24 @@ static void set_memory_options(uint64_t *ram_slots, ram_addr_t *maxram_size,
     }
 }
 
+inline static void smc_set_capability(MigrationState *s,
+                                      enum MigrationCapability cap,
+                                      bool on)
+{
+    printf("[SMC]set %s: %s\n", MigrationCapability_lookup[cap],
+           on ? "on" : "off");
+    s->enabled_capabilities[cap] = on;
+}
+
+static void smc_migrate_set_default_capability(void)
+{
+    MigrationState *s = migrate_get_current();
+
+    smc_set_capability(s, MIGRATION_CAPABILITY_RDMA_PIN_ALL, true);
+    smc_set_capability(s, MIGRATION_CAPABILITY_MC_DISK_DISABLE, true);
+    smc_set_capability(s, MIGRATION_CAPABILITY_MC, true);
+}
+
 int main(int argc, char **argv, char **envp)
 {
     int i;
@@ -4620,6 +4638,8 @@ int main(int argc, char **argv, char **envp)
         dump_vmstate_json_to_file(vmstate_dump_file);
         return 0;
     }
+
+    smc_migrate_set_default_capability();
 
     if (incoming) {
         Error *local_err = NULL;

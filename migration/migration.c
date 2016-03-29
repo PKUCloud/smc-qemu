@@ -531,23 +531,6 @@ bool migration_has_failed(MigrationState *s)
             s->state == MIGRATION_STATUS_FAILED);
 }
 
-inline static void smc_set_capability(MigrationState *s,
-                                      enum MigrationCapability cap,
-                                      bool on)
-{
-    printf("[SMC]set %s: %s\n", MigrationCapability_lookup[cap],
-           on ? "on" : "off");
-    s->enabled_capabilities[cap] = on;
-}
-
-static void smc_migrate_set_default_capability(MigrationState *s)
-{
-    smc_set_capability(s, MIGRATION_CAPABILITY_RDMA_PIN_ALL, true);
-    smc_set_capability(s, MIGRATION_CAPABILITY_MC_DISK_DISABLE, true);
-    smc_set_capability(s, MIGRATION_CAPABILITY_MC_RDMA_COPY, true);
-    smc_set_capability(s, MIGRATION_CAPABILITY_RDMA_KEEPALIVE, true);
-}
-
 static MigrationState *migrate_init(const MigrationParams *params)
 {
     MigrationState *s = migrate_get_current();
@@ -567,7 +550,6 @@ static MigrationState *migrate_init(const MigrationParams *params)
     s->params = *params;
     memcpy(s->enabled_capabilities, enabled_capabilities,
            sizeof(enabled_capabilities));
-    smc_migrate_set_default_capability(s);
     s->xbzrle_cache_size = xbzrle_cache_size;
 
     s->parameters[MIGRATION_PARAMETER_COMPRESS_LEVEL] = compress_level;

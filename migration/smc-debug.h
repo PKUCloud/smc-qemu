@@ -16,7 +16,8 @@ static int smc_dbflags = SMC_DBBIT(GEN) | SMC_DBBIT(INIT) | SMC_DBBIT(STREAM);
 #define SMC_LOG(what, fmt, ...) do { \
     if (smc_dbflags & SMC_DBBIT(what)) { \
         fprintf(smc_log_file, "[SMC]%s: " fmt "\n", __func__, \
-               ## __VA_ARGS__); } \
+               ## __VA_ARGS__); \
+        fflush(smc_log_file); } \
     } while (0)
 
 #else

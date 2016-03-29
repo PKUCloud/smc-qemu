@@ -544,6 +544,8 @@ static void smc_migrate_set_default_capability(MigrationState *s)
 {
     smc_set_capability(s, MIGRATION_CAPABILITY_RDMA_PIN_ALL, true);
     smc_set_capability(s, MIGRATION_CAPABILITY_MC_DISK_DISABLE, true);
+    smc_set_capability(s, MIGRATION_CAPABILITY_MC_RDMA_COPY, true);
+    smc_set_capability(s, MIGRATION_CAPABILITY_RDMA_KEEPALIVE, true);
 }
 
 static MigrationState *migrate_init(const MigrationParams *params)

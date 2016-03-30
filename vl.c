@@ -2944,6 +2944,7 @@ static void smc_migrate_set_default_capability(void)
     smc_set_capability(s, MIGRATION_CAPABILITY_RDMA_PIN_ALL, true);
     smc_set_capability(s, MIGRATION_CAPABILITY_MC_DISK_DISABLE, true);
     smc_set_capability(s, MIGRATION_CAPABILITY_MC, true);
+    smc_set_capability(s, MIGRATION_CAPABILITY_RDMA_KEEPALIVE, true);
 }
 
 int main(int argc, char **argv, char **envp)

@@ -947,8 +947,15 @@ static int ram_find_and_save_block(QEMUFile *f, bool last_stage,
     int pages = 0;
     MemoryRegion *mr;
 
-    if (!block)
+    if (!block) {
         block = QLIST_FIRST_RCU(&ram_list.blocks);
+        /* If last_seen_block is NULL and there is no drity block, we will dive
+         * into infinite loop along the ram_list.blocks. So we change the
+         * last_seen_block here in order to detect that we have looped over the
+         * list one time and found nothing dirty.
+         */
+        last_seen_block = block;
+    }
 
     while (true) {
         mr = block->mr;

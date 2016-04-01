@@ -3978,7 +3978,6 @@ static int qemu_rdma_registration_stop(QEMUFile *f, void *opaque,
             return -EINVAL;
         }
 
-        qemu_rdma_move_header(rdma, reg_result_idx, &resp);
         memcpy(rdma->dest_blocks,
             rdma->wr_data[reg_result_idx].control_curr, resp.len);
         for (i = 0; i < nb_dest_blocks; i++) {

@@ -183,6 +183,7 @@ enum {
     RDMA_CONTROL_REGISTER_FINISHED,   /* current iteration finished */
     RDMA_CONTROL_UNREGISTER_REQUEST,  /* dynamic UN-registration */
     RDMA_CONTROL_UNREGISTER_FINISHED, /* unpinning finished */
+    SMC_RDMA_CONTROL_RAM_BLOCKS_RKEY, /* Send R_Key and host_addr to peer */
 };
 
 static const char *control_desc[] = {
@@ -3675,6 +3676,8 @@ static int qemu_rdma_registration_handle(QEMUFile *f, void *opaque,
     int idx = 0;
     int count = 0;
     int i = 0;
+    int j = 0;
+    int nb_dest_blocks = 0;
 
     CHECK_ERROR_STATE();
 
@@ -3866,6 +3869,44 @@ static int qemu_rdma_registration_handle(QEMUFile *f, void *opaque,
             error_report("Invalid RESULT message at dest.");
             ret = -EIO;
             goto out;
+        case SMC_RDMA_CONTROL_RAM_BLOCKS_RKEY:
+            SMC_LOG(GEN, "handling SMC_RDMA_CONTROL_RAM_BLOCKS_RKEY");
+            nb_dest_blocks = head.len / sizeof(RDMADestBlock);
+            assert(nb_dest_blocks == local->nb_blocks);
+            memcpy(rdma->dest_blocks,
+                   rdma->wr_data[idx].control_curr, head.len);
+            for (i = 0; i < nb_dest_blocks; ++i) {
+                RDMADestBlock *dest_block = &rdma->dest_blocks[i];
+
+                network_to_dest_block(&rdma->dest_blocks[i]);
+
+                SMC_LOG(GEN, "recv RDMADestBlock r_host_addr=%" PRIu64
+                        " r_rkey=%" PRIu32 " offset=%" PRIu64 " length=%" PRIu64,
+                        dest_block->remote_host_addr,
+                        dest_block->remote_rkey,
+                        dest_block->offset, dest_block->length);
+
+                for (j = 0; j < local->nb_blocks; ++j) {
+                    if (dest_block->offset != local->block[j].offset) {
+                        continue;
+                    }
+                    if (dest_block->length != local->block[j].length) {
+                        SMC_ERR("SMC_RDMA_CONTROL_RAM_BLOCKS_RKEY: ram blocks "
+                                "length mismatch");
+                        return -EINVAL;
+                    }
+                    local->block[j].remote_host_addr = dest_block->remote_host_addr;
+                    local->block[j].remote_rkey = dest_block->remote_rkey;
+                    break;
+                }
+
+                if (j >= local->nb_blocks) {
+                    SMC_ERR("SMC_RDMA_CONTROL_RAM_BLOCKS_RKEY:  ram blocks "
+                            "offset mismatch");
+                    return -EINVAL;
+                }
+            }
+            break;
         default:
             error_report("Unknown control message %s", control_desc[head.type]);
             ret = -EIO;
@@ -3909,6 +3950,44 @@ static int qemu_rdma_registration_start(QEMUFile *f, void *opaque,
     qemu_fflush(f);
 
     return 0;
+}
+
+static void smc_rdma_send_blocks_rkey(RDMAContext *rdma)
+{
+    RDMAControlHeader head = { .type = SMC_RDMA_CONTROL_RAM_BLOCKS_RKEY,
+                               .repeat = 1};
+    RDMALocalBlocks *local = &rdma->local_ram_blocks;
+    int i;
+    RDMADestBlock *dest_blocks;
+    int ret;
+
+    /* We only support pin_all */
+    assert(rdma->pin_all);
+    SMC_LOG(GEN, "send R_Key of RDMALocalBlocks");
+    dest_blocks = (RDMADestBlock *)g_malloc0(sizeof(RDMADestBlock) *
+                  local->nb_blocks);
+    for (i = 0; i < local->nb_blocks; ++i) {
+        dest_blocks[i].remote_host_addr = (uintptr_t)(local->block[i].local_host_addr);
+        dest_blocks[i].remote_rkey = local->block[i].mr->rkey;
+        dest_blocks[i].offset = local->block[i].offset;
+        dest_blocks[i].length = local->block[i].length;
+
+        SMC_LOG(GEN, "send RDMADestBlock r_host_addr=%" PRIu64 " r_rkey=%"
+                PRIu32 " offset=%" PRIu64 " length=%" PRIu64,
+                dest_blocks[i].remote_host_addr, dest_blocks[i].remote_rkey,
+                dest_blocks[i].offset, dest_blocks[i].length);
+
+        dest_block_to_network(&dest_blocks[i]);
+    }
+
+    head.len = local->nb_blocks * sizeof(RDMADestBlock);
+    ret = qemu_rdma_exchange_send(rdma, &head, (uint8_t *)dest_blocks, NULL,
+                                  NULL, NULL);
+    if (ret < 0) {
+        SMC_ERR("qemu_rdma_exchange_send() failed to send blocks info");
+    }
+
+    g_free(dest_blocks);
 }
 
 /*
@@ -4008,6 +4087,8 @@ static int qemu_rdma_registration_stop(QEMUFile *f, void *opaque,
                 return -EINVAL;
             }
         }
+
+        smc_rdma_send_blocks_rkey(rdma);
     }
 
     trace_qemu_rdma_registration_stop(flags);

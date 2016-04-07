@@ -40,6 +40,7 @@
 #include "qemu/rcu_queue.h"
 
 #include "smc-debug.h"
+#include "smc.h"
 
 #ifdef DEBUG_MIGRATION_RAM
 #define DPRINTF(fmt, ...) \
@@ -984,6 +985,9 @@ static int ram_find_and_save_block(QEMUFile *f, bool last_stage,
                 pages = ram_save_compressed_page(f, block, offset, last_stage,
                                                  bytes_transferred);
             } else {
+                /* Here we can decide if we need to transfer this dirty page */
+                smc_dirty_pages_insert(&smc_info, block->offset, offset,
+                                       TARGET_PAGE_SIZE);
                 pages = ram_save_page(f, block, offset, last_stage,
                                       bytes_transferred);
             }

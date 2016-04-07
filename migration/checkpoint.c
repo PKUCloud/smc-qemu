@@ -31,6 +31,8 @@
 #include "sysemu/block-backend.h"
 #include <sys/ioctl.h>
 
+#include "smc.h"
+
 static void flush_trace_buffer(void) {
 #ifdef CONFIG_TRACE_SIMPLE
     st_flush_trace_buffer();
@@ -1022,6 +1024,8 @@ static void *mc_thread(void *opaque)
     Error *local_err = NULL;
     bool blk_enabled = false;
 
+    smc_init(&smc_info);
+
     if (!(mc_control = qemu_fopen_socket(fd, "rb"))) {
         fprintf(stderr, "Failed to setup read MC control\n");
         goto err;
@@ -1180,6 +1184,12 @@ static void *mc_thread(void *opaque)
 
         qemu_fflush(s->file);
 
+        /* Send the dirty pages info of this chunk and then reset the dirty
+         * pages set.
+         */
+        assert(smc_dirty_pages_count(&smc_info) == mc.total_copies);
+        smc_dirty_pages_reset(&smc_info);
+
         if (commit_sent) {
             DDPRINTF("Waiting for commit ACK\n");
 
@@ -1259,6 +1269,8 @@ err:
      */
     migrate_set_state(s, MIGRATION_STATUS_CHECKPOINTING, MIGRATION_STATUS_FAILED);
 out:
+    smc_exit(&smc_info);
+
     if (mc_staging) {
         qemu_fclose(mc_staging);
     }

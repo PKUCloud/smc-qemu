@@ -20,8 +20,17 @@ static int smc_dbflags = SMC_DBBIT(GEN) | SMC_DBBIT(INIT) | SMC_DBBIT(STREAM);
         fflush(smc_log_file); } \
     } while (0)
 
+#define SMC_ASSERT(x) do { \
+    if (!(x)) { \
+        (void)smc_dbflags; \
+        fprintf(stderr, "[SMC]error: ASSERTION FAILED! (%s) %s, %s #%d\n", \
+                #x, __FILE__, __func__, __LINE__); \
+        exit(1); } \
+    } while (0)
+
 #else
 #define SMC_LOG(what, fmt, ...) do {} while (0)
+#define SMC_ASSERT(x) do {} while (0)
 #endif
 
 #define SMC_ERR(fmt, ...) do { \

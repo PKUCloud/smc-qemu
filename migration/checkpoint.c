@@ -32,6 +32,7 @@
 #include <sys/ioctl.h>
 
 #include "smc.h"
+#include "smc-debug.h"
 
 static void flush_trace_buffer(void) {
 #ifdef CONFIG_TRACE_SIMPLE
@@ -1187,7 +1188,7 @@ static void *mc_thread(void *opaque)
         /* Send the dirty pages info of this chunk and then reset the dirty
          * pages set.
          */
-        assert(smc_dirty_pages_count(&smc_info) == mc.total_copies);
+        SMC_ASSERT(smc_dirty_pages_count(&smc_info) == mc.total_copies);
         smc_dirty_pages_reset(&smc_info);
 
         if (commit_sent) {

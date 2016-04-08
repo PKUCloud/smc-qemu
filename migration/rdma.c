@@ -3872,7 +3872,7 @@ static int qemu_rdma_registration_handle(QEMUFile *f, void *opaque,
         case SMC_RDMA_CONTROL_RAM_BLOCKS_RKEY:
             SMC_LOG(GEN, "handling SMC_RDMA_CONTROL_RAM_BLOCKS_RKEY");
             nb_dest_blocks = head.len / sizeof(RDMADestBlock);
-            assert(nb_dest_blocks == local->nb_blocks);
+            SMC_ASSERT(nb_dest_blocks == local->nb_blocks);
             memcpy(rdma->dest_blocks,
                    rdma->wr_data[idx].control_curr, head.len);
             for (i = 0; i < nb_dest_blocks; ++i) {
@@ -3962,7 +3962,7 @@ static void smc_rdma_send_blocks_rkey(RDMAContext *rdma)
     int ret;
 
     /* We only support pin_all */
-    assert(rdma->pin_all);
+    SMC_ASSERT(rdma->pin_all);
     SMC_LOG(GEN, "send R_Key of RDMALocalBlocks");
     dest_blocks = (RDMADestBlock *)g_malloc0(sizeof(RDMADestBlock) *
                   local->nb_blocks);

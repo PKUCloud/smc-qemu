@@ -1025,7 +1025,7 @@ static void *mc_thread(void *opaque)
     Error *local_err = NULL;
     bool blk_enabled = false;
 
-    smc_init(&smc_info);
+    smc_init(&glo_smc_info);
 
     if (!(mc_control = qemu_fopen_socket(fd, "rb"))) {
         fprintf(stderr, "Failed to setup read MC control\n");
@@ -1185,12 +1185,6 @@ static void *mc_thread(void *opaque)
 
         qemu_fflush(s->file);
 
-        /* Send the dirty pages info of this chunk and then reset the dirty
-         * pages set.
-         */
-        SMC_ASSERT(smc_dirty_pages_count(&smc_info) == mc.total_copies);
-        smc_dirty_pages_reset(&smc_info);
-
         if (commit_sent) {
             DDPRINTF("Waiting for commit ACK\n");
 
@@ -1213,6 +1207,16 @@ static void *mc_thread(void *opaque)
          * packets from the buffer if enabled.
          */
         mc_flush_oldest_buffer();
+
+        /* Send the dirty pages info of this chunk and then reset the dirty
+         * pages set.
+         * We won't treat all pages dirty in the first chunk because we continue
+         * from live migration. So we don't need to skip sending dirty pages
+         * info in the first chunk.
+         */
+        SMC_ASSERT(smc_dirty_pages_count(&glo_smc_info) == mc.total_copies);
+        smc_send_dirty_info(qemu_file_get_opaque(s->file), &glo_smc_info);
+        smc_dirty_pages_reset(&glo_smc_info);
 
         end_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
         s->total_time = end_time - start_time;
@@ -1270,7 +1274,7 @@ err:
      */
     migrate_set_state(s, MIGRATION_STATUS_CHECKPOINTING, MIGRATION_STATUS_FAILED);
 out:
-    smc_exit(&smc_info);
+    smc_exit(&glo_smc_info);
 
     if (mc_staging) {
         qemu_fclose(mc_staging);
@@ -1348,6 +1352,8 @@ void mc_process_incoming_checkpoints_if_requested(QEMUFile *f)
         DPRINTF("Source has not requested MC. Returning.\n");
         return;
     }
+
+    smc_init(&glo_smc_info);
 
     if (!(mc_control = qemu_fopen_socket(fd, "wb"))) {
         fprintf(stderr, "Could not make incoming MC control channel\n");
@@ -1487,6 +1493,11 @@ void mc_process_incoming_checkpoints_if_requested(QEMUFile *f)
         }
 
         if (checkpoint_received) {
+            /* Received dirty page set before parsing the checkpoint so that
+             * the Src can continue as soon as possible.
+             */
+            smc_recv_dirty_info(qemu_file_get_opaque(f), &glo_smc_info);
+
             mc.curr_slab = QTAILQ_FIRST(&mc.slab_head);
             mc.slab_total = checkpoint_size;
 
@@ -1533,6 +1544,8 @@ err:
     flush_trace_buffer();
     exit(1);
 out:
+    smc_exit(&glo_smc_info);
+
     if (local_err) {
         error_report_err(local_err);
     }

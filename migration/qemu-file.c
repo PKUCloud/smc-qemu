@@ -93,6 +93,11 @@ bool qemu_file_is_writable(QEMUFile *f)
     return f->ops->writev_buffer || f->ops->put_buffer;
 }
 
+void *qemu_file_get_opaque(QEMUFile *f)
+{
+    return f->opaque;
+}
+
 /**
  * Flushes QEMUFile buffer
  *

@@ -31,6 +31,7 @@
 #include <sys/resource.h>
 
 #include "smc-debug.h"
+#include "smc.h"
 
 /*
  * Print and error on both the Monitor and the Log file.
@@ -184,6 +185,7 @@ enum {
     RDMA_CONTROL_UNREGISTER_REQUEST,  /* dynamic UN-registration */
     RDMA_CONTROL_UNREGISTER_FINISHED, /* unpinning finished */
     SMC_RDMA_CONTROL_RAM_BLOCKS_RKEY, /* Send R_Key and host_addr to peer */
+    SMC_RDMA_CONTROL_DIRTY_INFO,      /* Send dirty pages info */
 };
 
 static const char *control_desc[] = {
@@ -3988,6 +3990,80 @@ static void smc_rdma_send_blocks_rkey(RDMAContext *rdma)
     }
 
     g_free(dest_blocks);
+}
+
+static void smc_rdma_send_dirty_info(RDMAContext *rdma, SMCInfo *smc_info)
+{
+    RDMAControlHeader head = { .type = SMC_RDMA_CONTROL_DIRTY_INFO,
+                               .repeat = 1 };
+    int ret;
+    SMCDirtyPage *dirty_pages;
+    int nb_pages;
+
+    nb_pages = smc_dirty_pages_count(smc_info);
+    dirty_pages = smc_dirty_pages_info(smc_info);
+
+    head.len = nb_pages * sizeof(*dirty_pages);
+    SMC_ASSERT(head.len + sizeof(head) <= RDMA_CONTROL_MAX_BUFFER);
+
+    /* TODO: We should translate the byte order before and after network
+     * transfer.
+     */
+    ret = qemu_rdma_exchange_send(rdma, &head, (uint8_t *)dirty_pages, NULL,
+                                  NULL, NULL);
+    if (ret < 0) {
+        SMC_ERR("qemu_rdma_exchange_send() failed to send dirty pages info");
+        return;
+    }
+    SMC_LOG(GEN, "send SMC_RDMA_CONTROL_DIRTY_INFO %d dirty pages info",
+            nb_pages);
+}
+
+void smc_send_dirty_info(void *opaque, SMCInfo *smc_info)
+{
+    QEMUFileRDMA *rfile = opaque;
+    RDMAContext *rdma = rfile->rdma;
+
+    smc_rdma_send_dirty_info(rdma, smc_info);
+}
+
+static void smc_rdma_recv_dirty_info(RDMAContext *rdma, SMCInfo *smc_info)
+{
+    RDMAControlHeader head;
+    int nb_pages;
+    int ret;
+    RDMAWorkRequestData *req_data = &(rdma->wr_data[RDMA_WRID_READY]);
+
+    ret = qemu_rdma_exchange_recv(rdma, &head, SMC_RDMA_CONTROL_DIRTY_INFO);
+    if (ret < 0) {
+        SMC_ERR("qemu_rdma_exchange_recv() failed to recv dirty pages info");
+        return;
+    }
+
+    nb_pages = head.len / sizeof(SMCDirtyPage);
+    SMC_LOG(GEN, "recv SMC_RDMA_CONTROL_DIRTY_INFO %d dirty pages info",
+            nb_pages);
+    /* TODO: We should translate the byte order before and after network
+     * transfer.
+     */
+    smc_dirty_pages_from_buf(smc_info,
+                             req_data->control_curr,
+                             nb_pages);
+
+    /* We need to clean the wr_data[] control message buffer now, since we
+     * won't send a message with no data to clean it. It is necessary because
+     * we will call qemu_get_* to fetch info from the buffer.
+     */
+    req_data->control_len = 0;
+    req_data->control_curr = req_data->control + sizeof(head);
+}
+
+void smc_recv_dirty_info(void *opaque, SMCInfo *smc_info)
+{
+    QEMUFileRDMA *rfile = opaque;
+    RDMAContext *rdma = rfile->rdma;
+
+    smc_rdma_recv_dirty_info(rdma, smc_info);
 }
 
 /*

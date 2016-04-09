@@ -80,14 +80,18 @@ static void smc_dirty_page_set_from_buf(SMCDirtyPageSet *page_set,
 void smc_init(SMCInfo *smc_info)
 {
     SMC_LOG(INIT, "");
+    SMC_ASSERT(!smc_info->init);
     memset(smc_info, 0, sizeof(*smc_info));
     smc_dirty_page_set_init(&smc_info->dirty_pages);
+    smc_info->init = true;
 }
 
 void smc_exit(SMCInfo *smc_info)
 {
     SMC_LOG(INIT, "");
+    SMC_ASSERT(smc_info->init);
     smc_dirty_page_set_free(&smc_info->dirty_pages);
+    smc_info->init = false;
 }
 
 void smc_dirty_pages_insert(SMCInfo *smc_info, uint64_t block_offset,
@@ -98,6 +102,7 @@ void smc_dirty_pages_insert(SMCInfo *smc_info, uint64_t block_offset,
                           .size = size,
                         };
 
+    SMC_ASSERT(smc_info->init);
     SMC_LOG(GEN, "add block_offset=%" PRIu64 " offset=%" PRIu64
             " size=%" PRIu64, block_offset, offset, size);
     smc_dirty_page_set_insert(&smc_info->dirty_pages, &page);
@@ -106,12 +111,14 @@ void smc_dirty_pages_insert(SMCInfo *smc_info, uint64_t block_offset,
 void smc_dirty_pages_reset(SMCInfo *smc_info)
 {
     SMC_LOG(GEN, "dirty_pages=%d", smc_info->dirty_pages.nb_pages);
+    SMC_ASSERT(smc_info->init);
     smc_dirty_page_set_reset(&smc_info->dirty_pages);
 }
 
 void smc_dirty_pages_from_buf(SMCInfo *smc_info, const void *buf, int nb_pages)
 {
     SMC_LOG(GEN, "copy %d dirty pages info", nb_pages);
+    SMC_ASSERT(smc_info->init);
     smc_dirty_page_set_from_buf(&smc_info->dirty_pages,
                                 (const SMCDirtyPage *)buf, nb_pages);
 }

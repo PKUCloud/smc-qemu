@@ -2,6 +2,7 @@
 #define MIGRATION_SMC_H
 
 #include "qemu/typedefs.h"
+#include "qemu-common.h"
 
 /* Info about a dirty page within a chunk */
 typedef struct SMCDirtyPage {
@@ -20,6 +21,7 @@ typedef struct SMCDirtyPageSet {
 } SMCDirtyPageSet;
 
 typedef struct SMCInfo {
+    bool init;
     SMCDirtyPageSet dirty_pages;
 } SMCInfo;
 
@@ -42,5 +44,10 @@ static inline int smc_dirty_pages_count(SMCInfo *smc_info)
 static inline SMCDirtyPage *smc_dirty_pages_info(SMCInfo *smc_info)
 {
     return smc_info->dirty_pages.pages;
+}
+
+static inline bool smc_is_init(SMCInfo *smc_info)
+{
+    return smc_info->init;
 }
 #endif

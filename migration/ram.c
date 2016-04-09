@@ -986,8 +986,10 @@ static int ram_find_and_save_block(QEMUFile *f, bool last_stage,
                                                  bytes_transferred);
             } else {
                 /* Here we can decide if we need to transfer this dirty page */
-                smc_dirty_pages_insert(&glo_smc_info, block->offset, offset,
-                                       TARGET_PAGE_SIZE);
+                if (smc_is_init(&glo_smc_info)) {
+                    smc_dirty_pages_insert(&glo_smc_info, block->offset, offset,
+                                           TARGET_PAGE_SIZE);
+                }
                 pages = ram_save_page(f, block, offset, last_stage,
                                       bytes_transferred);
             }

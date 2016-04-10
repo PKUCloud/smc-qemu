@@ -869,6 +869,7 @@ void hmp_info_tpm(Monitor *mon, const QDict *qdict)
 
 void hmp_quit(Monitor *mon, const QDict *qdict)
 {
+    smc_print_stat();
     monitor_suspend(mon);
     qmp_quit(NULL);
 }

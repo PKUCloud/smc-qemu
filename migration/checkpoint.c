@@ -25,6 +25,7 @@
 #include "migration/migration.h"
 #include "migration/qemu-file.h"
 #include "qmp-commands.h"
+#include "hmp.h"
 #include "net/tap-linux.h"
 #include "trace/simple.h"
 #include "block/block.h"
@@ -1226,7 +1227,7 @@ static void *mc_thread(void *opaque)
         s->mbps = MBPS(mc.slab_total, s->xmit_time);
         s->copy_mbps = MBPS(mc.slab_total, s->ram_copy_time);
         s->bytes_xfer = mc.slab_total;
-        s->checkpoints = mc.checkpoints++;
+        s->checkpoints = ++(mc.checkpoints);
 
         wait_time = (s->downtime <= freq_ms) ? (freq_ms - s->downtime) : 0;
 
@@ -1262,6 +1263,7 @@ static void *mc_thread(void *opaque)
          * as soon as the previous transmission completed.
          */
         if (wait_time) {
+            s->nr_sleeps++;
             g_usleep(wait_time * 1000);
         }
     }
@@ -1833,4 +1835,13 @@ void mc_cheat_unregister_tce(DeviceState * d, const VMStateDescription *v, void 
     } else if (dev) {
         vmstate_unregister(dev, vmsd, opaque);
     }
+}
+
+void smc_print_stat(void)
+{
+    MigrationState *s = migrate_get_current();
+
+    printf("[SMC]Migration State: %s\n", MigrationStatus_lookup[s->state]);
+    printf("[SMC]Num of Checkpoints: %" PRId64 "\n", s->checkpoints);
+    printf("[SMC]Num of sleeps in MC: %" PRId64 "\n", s->nr_sleeps);
 }

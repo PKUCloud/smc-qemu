@@ -1485,6 +1485,8 @@ static uint64_t qemu_rdma_poll(RDMAContext *rdma,
     int ret;
     struct ibv_wc wc;
     uint64_t wr_id;
+    RDMAWorkRequestData *req_data;
+    RDMAControlHeader head;
 
     if (!lc->start_time) {
         lc->start_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
@@ -1516,8 +1518,15 @@ static uint64_t qemu_rdma_poll(RDMAContext *rdma,
     }
 
     if (rdma->control_ready_expected &&
-        (wr_id >= RDMA_WRID_RECV_CONTROL)) {
-        rdma->control_ready_expected = 0;
+        (wr_id == (RDMA_WRID_RECV_CONTROL + RDMA_WRID_READY))) {
+        req_data = &rdma->wr_data[RDMA_WRID_READY];
+
+        memcpy(&head, req_data->control, sizeof(head));
+        network_to_control((void *)&head);
+        if (head.type == RDMA_CONTROL_READY) {
+            rdma->control_ready_expected = 0;
+            SMC_LOG(GEN, "get head.type=%d, see expected=0", head.type);
+        }
     }
 
     if (wr_id == RDMA_WRID_RDMA_WRITE_REMOTE) {

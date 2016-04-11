@@ -10,6 +10,9 @@
 
 SMCInfo glo_smc_info;
 
+#define min(x,y) ((x) < (y) ? (x) : (y))
+#define max(x,y) ((x) > (y) ? (x) : (y))
+
 static void smc_dirty_page_set_init(SMCDirtyPageSet *page_set)
 {
     page_set->size = SMC_DIRTY_PAGE_SET_INIT_SIZE;
@@ -33,20 +36,29 @@ static void smc_dirty_page_set_reset(SMCDirtyPageSet *page_set)
     page_set->nb_pages = 0;
 }
 
+static void smc_dirty_page_set_resize(SMCDirtyPageSet *page_set, int new_size)
+{
+    SMCDirtyPage *data;
+
+    data = (SMCDirtyPage *)g_malloc0(new_size * sizeof(SMCDirtyPage));
+    if (page_set->nb_pages > 0) {
+        memcpy(data, page_set->pages, min(page_set->nb_pages, new_size) *
+               sizeof(SMCDirtyPage));
+    }
+    g_free(page_set->pages);
+    page_set->pages = data;
+    page_set->size = new_size;
+    page_set->nb_pages = min(page_set->nb_pages, new_size);
+}
+
 static void smc_dirty_page_set_insert(SMCDirtyPageSet *page_set,
                                       const SMCDirtyPage *page)
 {
-    SMCDirtyPage *data;
-    int new_size;
     int idx;
 
     if (page_set->size == page_set->nb_pages) {
-        new_size = page_set->size + SMC_DIRTY_PAGE_SET_INIT_SIZE;
-        data = (SMCDirtyPage *)g_malloc0(new_size * sizeof(SMCDirtyPage));
-        memcpy(data, page_set->pages, page_set->size * sizeof(SMCDirtyPage));
-        g_free(page_set->pages);
-        page_set->pages = data;
-        page_set->size = new_size;
+        smc_dirty_page_set_resize(page_set,
+                                  page_set->size + SMC_DIRTY_PAGE_SET_INIT_SIZE);
     }
 
     idx = page_set->nb_pages;
@@ -57,24 +69,22 @@ static void smc_dirty_page_set_insert(SMCDirtyPageSet *page_set,
     page_set->nb_pages++;
 }
 
-static void smc_dirty_page_set_from_buf(SMCDirtyPageSet *page_set,
-                                        const SMCDirtyPage *buf, int nb_pages)
+static void smc_dirty_page_set_insert_from_buf(SMCDirtyPageSet *page_set,
+                                               const SMCDirtyPage *buf,
+                                               int nb_pages)
 {
     int new_size = page_set->size;
 
-    if (page_set->size < nb_pages) {
+    if (new_size - page_set->nb_pages < nb_pages) {
         do {
             new_size += SMC_DIRTY_PAGE_SET_INIT_SIZE;
-        } while (new_size < nb_pages);
-
-        g_free(page_set->pages);
-        page_set->pages = (SMCDirtyPage *)g_malloc0(new_size *
-                                                    sizeof(SMCDirtyPage));
-        page_set->size = new_size;
+        } while (new_size - page_set->nb_pages < nb_pages);
+        smc_dirty_page_set_resize(page_set, new_size);
     }
 
-    memcpy(page_set->pages, buf, nb_pages * sizeof(SMCDirtyPage));
-    page_set->nb_pages = nb_pages;
+    memcpy(page_set->pages + page_set->nb_pages, buf,
+           nb_pages * sizeof(SMCDirtyPage));
+    page_set->nb_pages += nb_pages;
 }
 
 void smc_init(SMCInfo *smc_info)
@@ -115,10 +125,11 @@ void smc_dirty_pages_reset(SMCInfo *smc_info)
     smc_dirty_page_set_reset(&smc_info->dirty_pages);
 }
 
-void smc_dirty_pages_from_buf(SMCInfo *smc_info, const void *buf, int nb_pages)
+void smc_dirty_pages_insert_from_buf(SMCInfo *smc_info, const void *buf,
+                                     int nb_pages)
 {
     SMC_LOG(GEN, "copy %d dirty pages info", nb_pages);
     SMC_ASSERT(smc_info->init);
-    smc_dirty_page_set_from_buf(&smc_info->dirty_pages,
-                                (const SMCDirtyPage *)buf, nb_pages);
+    smc_dirty_page_set_insert_from_buf(&smc_info->dirty_pages,
+                                       (const SMCDirtyPage *)buf, nb_pages);
 }

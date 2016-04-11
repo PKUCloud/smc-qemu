@@ -32,7 +32,8 @@ void smc_exit(SMCInfo *smc_info);
 void smc_dirty_pages_insert(SMCInfo *smc_info, uint64_t block_offset,
                             uint64_t offset, uint64_t size);
 void smc_dirty_pages_reset(SMCInfo *smc_info);
-void smc_dirty_pages_from_buf(SMCInfo *smc_info, const void *buf, int nb_pages);
+void smc_dirty_pages_insert_from_buf(SMCInfo *smc_info, const void *buf,
+                                     int nb_pages);
 void smc_send_dirty_info(void *opaque, SMCInfo *smc_info);
 void smc_recv_dirty_info(void *opaque, SMCInfo *smc_info);
 

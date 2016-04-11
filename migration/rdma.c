@@ -47,6 +47,9 @@
 
 #define SET_ERROR(rdma, err) if (!rdma->error_state) rdma->error_state = err
 
+#define min(x,y) ((x) < (y) ? (x) : (y))
+#define max(x,y) ((x) > (y) ? (x) : (y))
+
 #define RDMA_RESOLVE_TIMEOUT_MS 10000
 
 /* Do not merge data if larger than this. */
@@ -4001,6 +4004,13 @@ static void smc_rdma_send_blocks_rkey(RDMAContext *rdma)
     g_free(dest_blocks);
 }
 
+static const int MAX_NB_PAGES = (RDMA_CONTROL_MAX_BUFFER -
+                                 sizeof(RDMAControlHeader)) /
+                                sizeof(SMCDirtyPage);
+/* Info about dirty pages of one chunk may be too large to load it all into
+ * one RDMA control message. We utilize the RDMAControlHeader.padding to
+ * record the total length of all the messages data.
+ */
 static void smc_rdma_send_dirty_info(RDMAContext *rdma, SMCInfo *smc_info)
 {
     RDMAControlHeader head = { .type = SMC_RDMA_CONTROL_DIRTY_INFO,
@@ -4008,24 +4018,35 @@ static void smc_rdma_send_dirty_info(RDMAContext *rdma, SMCInfo *smc_info)
     int ret;
     SMCDirtyPage *dirty_pages;
     int nb_pages;
+    int pages_to_send;
 
     nb_pages = smc_dirty_pages_count(smc_info);
     dirty_pages = smc_dirty_pages_info(smc_info);
 
-    head.len = nb_pages * sizeof(*dirty_pages);
-    SMC_ASSERT(head.len + sizeof(head) <= RDMA_CONTROL_MAX_BUFFER);
+    head.padding = nb_pages * sizeof(*dirty_pages);
 
-    /* TODO: We should translate the byte order before and after network
-     * transfer.
-     */
-    ret = qemu_rdma_exchange_send(rdma, &head, (uint8_t *)dirty_pages, NULL,
-                                  NULL, NULL);
-    if (ret < 0) {
-        SMC_ERR("qemu_rdma_exchange_send() failed to send dirty pages info");
-        return;
-    }
     SMC_LOG(GEN, "send SMC_RDMA_CONTROL_DIRTY_INFO %d dirty pages info",
             nb_pages);
+    if (nb_pages > MAX_NB_PAGES) {
+        SMC_LOG(GEN, "nb_pages=%d > MAX_NB_PAGES=%d", nb_pages, MAX_NB_PAGES);
+    }
+    do {
+        pages_to_send = min(MAX_NB_PAGES, nb_pages);
+        head.len = pages_to_send * sizeof(*dirty_pages);
+        SMC_ASSERT(head.len + sizeof(head) <= RDMA_CONTROL_MAX_BUFFER);
+        /* TODO: We should translate the byte order before and after network
+         * transfer.
+         */
+        ret = qemu_rdma_exchange_send(rdma, &head, (uint8_t *)dirty_pages, NULL,
+                NULL, NULL);
+        if (ret < 0) {
+            SMC_ERR("qemu_rdma_exchange_send() failed to send dirty pages info");
+            return;
+        }
+
+        nb_pages -= pages_to_send;
+        dirty_pages += pages_to_send;
+    } while (nb_pages);
 }
 
 void smc_send_dirty_info(void *opaque, SMCInfo *smc_info)
@@ -4039,25 +4060,34 @@ void smc_send_dirty_info(void *opaque, SMCInfo *smc_info)
 static void smc_rdma_recv_dirty_info(RDMAContext *rdma, SMCInfo *smc_info)
 {
     RDMAControlHeader head;
-    int nb_pages;
+    int nb_pages = 0;
     int ret;
     RDMAWorkRequestData *req_data = &(rdma->wr_data[RDMA_WRID_READY]);
+    int total_len = -1;
+    int pages_to_save;
 
-    ret = qemu_rdma_exchange_recv(rdma, &head, SMC_RDMA_CONTROL_DIRTY_INFO);
-    if (ret < 0) {
-        SMC_ERR("qemu_rdma_exchange_recv() failed to recv dirty pages info");
-        return;
-    }
+    smc_dirty_pages_reset(smc_info);
+    do {
+        ret = qemu_rdma_exchange_recv(rdma, &head, SMC_RDMA_CONTROL_DIRTY_INFO);
+        if (ret < 0) {
+            SMC_ERR("qemu_rdma_exchange_recv() failed to recv dirty pages info");
+            return;
+        }
+        if (total_len == -1) {
+            total_len = head.padding;
+        }
+        pages_to_save = head.len / sizeof(SMCDirtyPage);
+        /* TODO: We should translate the byte order before and after network
+         * transfer.
+         */
+        smc_dirty_pages_insert_from_buf(smc_info,
+                                        req_data->control_curr, pages_to_save);
+        nb_pages += pages_to_save;
+        total_len -= head.len;
+    } while (total_len > 0);
 
-    nb_pages = head.len / sizeof(SMCDirtyPage);
     SMC_LOG(GEN, "recv SMC_RDMA_CONTROL_DIRTY_INFO %d dirty pages info",
             nb_pages);
-    /* TODO: We should translate the byte order before and after network
-     * transfer.
-     */
-    smc_dirty_pages_from_buf(smc_info,
-                             req_data->control_curr,
-                             nb_pages);
 
     /* We need to clean the wr_data[] control message buffer now, since we
      * won't send a message with no data to clean it. It is necessary because

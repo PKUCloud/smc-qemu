@@ -13,16 +13,17 @@ typedef struct SMCDirtyPage {
     uint64_t size;
 } SMCDirtyPage;
 
-/* Maintain an array of SMCDirtyPage */
-typedef struct SMCDirtyPageSet {
-    SMCDirtyPage *pages;
-    int size;
-    int nb_pages;
-} SMCDirtyPageSet;
+/* Maintain an array of a struct */
+typedef struct SMCSet {
+    uint8_t *eles;     /* An array of a struct */
+    int cap;        /* Total number of the struct @eles can hold */
+    int nb_eles;    /* Current number of the struct @eles holds */
+    int ele_size;   /* sizeof(struct) */
+} SMCSet;
 
 typedef struct SMCInfo {
     bool init;
-    SMCDirtyPageSet dirty_pages;
+    SMCSet dirty_pages;
 } SMCInfo;
 
 extern SMCInfo glo_smc_info;
@@ -39,12 +40,12 @@ void smc_recv_dirty_info(void *opaque, SMCInfo *smc_info);
 
 static inline int smc_dirty_pages_count(SMCInfo *smc_info)
 {
-    return smc_info->dirty_pages.nb_pages;
+    return smc_info->dirty_pages.nb_eles;
 }
 
 static inline SMCDirtyPage *smc_dirty_pages_info(SMCInfo *smc_info)
 {
-    return smc_info->dirty_pages.pages;
+    return (SMCDirtyPage *)(smc_info->dirty_pages.eles);
 }
 
 static inline bool smc_is_init(SMCInfo *smc_info)

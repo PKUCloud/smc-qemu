@@ -84,6 +84,7 @@ void smc_init(SMCInfo *smc_info)
     SMC_ASSERT(!smc_info->init);
     memset(smc_info, 0, sizeof(*smc_info));
     smc_set_init(&smc_info->dirty_pages, sizeof(SMCDirtyPage));
+    smc_set_init(&smc_info->prefetch_pages, sizeof(SMCFetchPage));
     smc_info->init = true;
 }
 
@@ -92,6 +93,7 @@ void smc_exit(SMCInfo *smc_info)
     SMC_LOG(INIT, "");
     SMC_ASSERT(smc_info->init);
     smc_set_free(&smc_info->dirty_pages);
+    smc_set_free(&smc_info->prefetch_pages);
     smc_info->init = false;
 }
 
@@ -122,4 +124,34 @@ void smc_dirty_pages_insert_from_buf(SMCInfo *smc_info, const void *buf,
     SMC_LOG(GEN, "copy %d dirty pages info", nb_pages);
     SMC_ASSERT(smc_info->init);
     smc_set_insert_from_buf(&smc_info->dirty_pages, buf, nb_pages);
+}
+
+void smc_prefetch_pages_insert_from_buf(SMCInfo *smc_info, const void *buf,
+                                        int nb_pages)
+{
+    SMC_LOG(GEN, "copy %d prefetched pages info", nb_pages);
+    SMC_ASSERT(smc_info->init);
+    smc_set_insert_from_buf(&smc_info->prefetch_pages, buf, nb_pages);
+}
+
+void smc_prefetch_pages_insert(SMCInfo *smc_info, uint64_t block_offset,
+                               uint64_t offset, uint64_t size, SMC_HASH hash)
+{
+    SMCFetchPage page  = { .block_offset = block_offset,
+                           .offset = offset,
+                           .size = size,
+                           .hash = hash,
+                         };
+
+    SMC_ASSERT(smc_info->init);
+    SMC_LOG(GEN, "add block_offset=%" PRIu64 " offset=%" PRIu64
+            " size=%" PRIu64, block_offset, offset, size);
+    smc_set_insert(&smc_info->prefetch_pages, &page);
+}
+
+void smc_prefetch_pages_reset(SMCInfo *smc_info)
+{
+    SMC_LOG(GEN, "prefetch_pages=%d", smc_info->prefetch_pages.nb_eles);
+    SMC_ASSERT(smc_info->init);
+    smc_set_reset(&smc_info->prefetch_pages);
 }

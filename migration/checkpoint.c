@@ -1019,6 +1019,7 @@ static void *mc_thread(void *opaque)
     MigrationState *s = opaque;
     MCParams mc = { .file = s->file };
     MCSlab * slab;
+    void *f_opaque = qemu_file_get_opaque(s->file);
     int64_t initial_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
     int ret = 0, fd = qemu_get_fd(s->file), x;
     QEMUFile *mc_control, *mc_staging = NULL;
@@ -1093,6 +1094,7 @@ static void *mc_thread(void *opaque)
         int nb_slab = 0;
         (void)nb_slab;
 
+        smc_dirty_pages_reset(&glo_smc_info);
         slab = mc_slab_start(&mc);
         mc_copy_start(&mc);
         acct_clear();
@@ -1216,8 +1218,9 @@ static void *mc_thread(void *opaque)
          * info in the first chunk.
          */
         SMC_ASSERT(smc_dirty_pages_count(&glo_smc_info) == mc.total_copies);
-        smc_send_dirty_info(qemu_file_get_opaque(s->file), &glo_smc_info);
-        smc_dirty_pages_reset(&glo_smc_info);
+        smc_send_dirty_info(f_opaque, &glo_smc_info);
+
+        smc_sync_notice_dest_to_recv(f_opaque, &glo_smc_info);
 
         end_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
         s->total_time = end_time - start_time;
@@ -1266,6 +1269,13 @@ static void *mc_thread(void *opaque)
             s->nr_sleeps++;
             g_usleep(wait_time * 1000);
         }
+
+        /* TODO: Maybe we should decrease the @wait_time to sleep to get time
+         * for receiving the prefetched info.
+         * We should decide if we have time to receive the prefetched pages info
+         * or not according to the @wait_time.
+         */
+        smc_recv_prefetch_info(f_opaque, &glo_smc_info, true);
     }
 
     goto out;
@@ -1340,6 +1350,7 @@ void mc_process_incoming_checkpoints_if_requested(QEMUFile *f)
     MCParams mc = { .file = f };
     MCSlab *slab;
     int fd = qemu_get_fd(f);
+    void *f_opaque = qemu_file_get_opaque(f);
     QEMUFile *mc_control = NULL, *mc_staging = NULL;
     uint64_t checkpoint_size = 0, action, received = 0;
     uint64_t slabs = 0;
@@ -1347,6 +1358,7 @@ void mc_process_incoming_checkpoints_if_requested(QEMUFile *f)
     bool checkpoint_received = 0;
     bool blk_enabled = false;
     Error *local_err = NULL;
+    bool need_rollback = false;
 
     CALC_MAX_STRIKES();
 
@@ -1498,8 +1510,22 @@ void mc_process_incoming_checkpoints_if_requested(QEMUFile *f)
             /* Received dirty page set before parsing the checkpoint so that
              * the Src can continue as soon as possible.
              */
-            smc_recv_dirty_info(qemu_file_get_opaque(f), &glo_smc_info);
+            if (smc_recv_dirty_info(f_opaque, &glo_smc_info)) {
+                need_rollback = true;
+                goto apply_checkpoint;
+            }
 
+            if (smc_sync_src_ready_to_recv(f_opaque, &glo_smc_info)) {
+                need_rollback = true;
+                goto apply_checkpoint;
+            }
+
+            if (smc_prefetch_dirty_pages(f_opaque, &glo_smc_info)) {
+                need_rollback = true;
+                goto apply_checkpoint;
+            }
+
+apply_checkpoint:
             mc.curr_slab = QTAILQ_FIRST(&mc.slab_head);
             mc.slab_total = checkpoint_size;
 
@@ -1531,6 +1557,9 @@ void mc_process_incoming_checkpoints_if_requested(QEMUFile *f)
 
             DDPRINTF("Transaction complete. TCP pages: %" PRIu64 "\n", mc.pages_loaded);
             mc.checkpoints++;
+            if (need_rollback) {
+                goto rollback;
+            }
         }
     }
 

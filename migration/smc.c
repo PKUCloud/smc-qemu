@@ -207,6 +207,23 @@ void smc_backup_pages_insert(SMCInfo *smc_info, uint64_t block_offset,
     smc_set_insert(&smc_info->backup_pages, &page);
 }
 
+void *smc_backup_pages_insert_empty(SMCInfo *smc_info, uint64_t block_offset,
+                                    uint64_t offset, uint64_t size,
+                                    uint8_t *host_addr)
+{
+    SMCBackupPage page = { .block_offset = block_offset,
+                           .offset = offset,
+                           .size = size,
+                           .host_addr = host_addr,
+                         };
+    SMC_ASSERT(smc_info->init);
+    SMC_LOG(GEN, "add block_offset=%" PRIu64 " offset=%" PRIu64
+            " size=%" PRIu64, block_offset, offset, size);
+    page.data = (uint8_t *)g_malloc(size);
+    smc_set_insert(&smc_info->backup_pages, &page);
+    return page.data;
+}
+
 void smc_prefetch_page_cal_hash(SMCInfo *smc_info, int index)
 {
     return;
@@ -244,7 +261,7 @@ void smc_rollback_with_prefetch(SMCInfo *smc_info)
         break;
 
     case SMC_STATE_RECV_CHECKPOINT:
-        SMC_ERR("rollback with state=%s","SMC_STATE_RECV_CHECKPOINT");
+        SMC_LOG(GEN, "rollback with state=%s","SMC_STATE_RECV_CHECKPOINT");
         break;
 
     default:
@@ -255,4 +272,16 @@ void smc_rollback_with_prefetch(SMCInfo *smc_info)
     smc_prefetch_pages_reset(smc_info);
     smc_backup_pages_reset(smc_info);
     smc_prefetch_map_reset(smc_info);
+}
+
+bool smc_loadvm_need_check_prefetch(SMCInfo *smc_info)
+{
+    if (!smc_info->init) {
+        return false;
+    }
+    if ((smc_info->state == SMC_STATE_PREFETCH_DONE) &&
+        !smc_info->need_rollback) {
+        return true;
+    }
+    return false;
 }

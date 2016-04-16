@@ -1275,7 +1275,7 @@ static void *mc_thread(void *opaque)
          * We should decide if we have time to receive the prefetched pages info
          * or not according to the @wait_time.
          */
-        smc_recv_prefetch_info(f_opaque, &glo_smc_info, false);
+        smc_recv_prefetch_info(f_opaque, &glo_smc_info, true);
     }
 
     goto out;
@@ -1371,11 +1371,13 @@ void mc_process_incoming_checkpoints_if_requested(QEMUFile *f)
 
     if (!(mc_control = qemu_fopen_socket(fd, "wb"))) {
         fprintf(stderr, "Could not make incoming MC control channel\n");
+        glo_smc_info.need_rollback = true;
         goto rollback;
     }
 
     if (!(mc_staging = qemu_fopen_mc(&mc, "rb"))) {
         fprintf(stderr, "Could not make outgoing MC staging area\n");
+        glo_smc_info.need_rollback = true;
         goto rollback;
     }
 
@@ -1423,6 +1425,7 @@ void mc_process_incoming_checkpoints_if_requested(QEMUFile *f)
         checkpoint_received = false;
         ret = mc_recv(f, MC_TRANSACTION_ANY, &action);
         if (ret < 0) {
+            glo_smc_info.need_rollback = true;
             goto rollback;
         }
 
@@ -1438,6 +1441,11 @@ void mc_process_incoming_checkpoints_if_requested(QEMUFile *f)
             mc.pages_loaded = 0;
 
             assert(checkpoint_size);
+            if (qemu_file_get_error(f) < 0) {
+                SMC_ERR("QEMUFile error while starting transaction, rollback");
+                glo_smc_info.need_rollback = true;
+                goto rollback;
+            }
             break;
         case MC_TRANSACTION_COMMIT: /* tcp */
             slab = mc_slab_start(&mc);
@@ -1502,6 +1510,7 @@ void mc_process_incoming_checkpoints_if_requested(QEMUFile *f)
 
             if (qemu_file_get_error(f) < 0) {
                 SMC_ERR("QEMUFile error while receiving checkpoint, rollback");
+                glo_smc_info.need_rollback = true;
                 goto rollback;
             }
 
@@ -1510,6 +1519,7 @@ void mc_process_incoming_checkpoints_if_requested(QEMUFile *f)
             break;
         default:
             fprintf(stderr, "Unknown MC action: %" PRIu64 "\n", action);
+            glo_smc_info.need_rollback = true;
             goto rollback;
         }
 
@@ -1519,16 +1529,19 @@ void mc_process_incoming_checkpoints_if_requested(QEMUFile *f)
              */
             if (smc_recv_dirty_info(f_opaque, &glo_smc_info)) {
                 need_rollback = true;
+                glo_smc_info.need_rollback = true;
                 goto apply_checkpoint;
             }
 
             if (smc_sync_src_ready_to_recv(f_opaque, &glo_smc_info)) {
                 need_rollback = true;
+                glo_smc_info.need_rollback = true;
                 goto apply_checkpoint;
             }
 
             if (smc_prefetch_dirty_pages(f_opaque, &glo_smc_info)) {
                 need_rollback = true;
+                glo_smc_info.need_rollback = true;
                 goto apply_checkpoint;
             }
 

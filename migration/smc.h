@@ -62,6 +62,7 @@ typedef struct SMCInfo {
      */
     GHashTable *prefetch_map;
     int state;
+    bool need_rollback;
 } SMCInfo;
 
 extern SMCInfo glo_smc_info;
@@ -91,10 +92,14 @@ int smc_prefetch_dirty_pages(void *opaque, SMCInfo *smc_info);
 void smc_backup_pages_insert(SMCInfo *smc_info, uint64_t block_offset,
                              uint64_t offset, uint64_t size,
                              uint8_t *data);
+void *smc_backup_pages_insert_empty(SMCInfo *smc_info, uint64_t block_offset,
+                                    uint64_t offset, uint64_t size,
+                                    uint8_t *host_addr);
 void smc_backup_pages_reset(SMCInfo *smc_info);
 void smc_recover_backup_pages(SMCInfo *smc_info);
 void smc_prefetch_page_cal_hash(SMCInfo *smc_info, int index);
 void smc_rollback_with_prefetch(SMCInfo *smc_info);
+bool smc_loadvm_need_check_prefetch(SMCInfo *smc_info);
 
 static inline int smc_dirty_pages_count(SMCInfo *smc_info)
 {
@@ -142,9 +147,11 @@ static inline void smc_prefetch_map_insert(SMCInfo *smc_info, uint64_t phy_addr,
     g_hash_table_insert(smc_info->prefetch_map, key, page);
 }
 
-static inline void smc_prefetch_map_lookup(SMCInfo *smc_info, uint64_t phy_addr)
+static inline SMCFetchPage *smc_prefetch_map_lookup(SMCInfo *smc_info,
+                                                    uint64_t phy_addr)
 {
-    g_hash_table_lookup(smc_info->prefetch_map, (void *)(uintptr_t)phy_addr);
+    return g_hash_table_lookup(smc_info->prefetch_map,
+                               (void *)(uintptr_t)phy_addr);
 }
 
 static inline void smc_set_state(SMCInfo *smc_info, int state)

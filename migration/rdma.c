@@ -144,6 +144,7 @@ enum {
     RDMA_WRID_RDMA_WRITE_REMOTE = 1,
     RDMA_WRID_RDMA_WRITE_LOCAL = 2,
     RDMA_WRID_RDMA_KEEPALIVE = 3,
+    RDMA_WRID_RDMA_READ_REMOTE = 4,
     RDMA_WRID_SEND_CONTROL = 2000,
     RDMA_WRID_RECV_CONTROL = 4000,
 };
@@ -153,6 +154,7 @@ static const char *wrid_desc[] = {
     [RDMA_WRID_RDMA_WRITE_REMOTE] = "WRITE RDMA REMOTE",
     [RDMA_WRID_RDMA_WRITE_LOCAL] = "WRITE RDMA LOCAL",
     [RDMA_WRID_RDMA_KEEPALIVE] = "KEEPALIVE",
+    [RDMA_WRID_RDMA_READ_REMOTE] = "READ RDMA REMOTE",
     [RDMA_WRID_SEND_CONTROL] = "CONTROL SEND",
     [RDMA_WRID_RECV_CONTROL] = "CONTROL RECV",
 };
@@ -1139,13 +1141,11 @@ static int qemu_rdma_reg_whole_mr(RDMAContext *rdma,
                                   int index)
 {
     RDMALocalBlocks *local = &rdma->local_ram_blocks;
+    int access = IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE |
+                 IBV_ACCESS_REMOTE_READ;
 
-    *mr = ibv_reg_mr(pd,
-                local->block[index].local_host_addr,
-                local->block[index].length,
-                IBV_ACCESS_LOCAL_WRITE |
-                IBV_ACCESS_REMOTE_WRITE
-                );
+    *mr = ibv_reg_mr(pd, local->block[index].local_host_addr,
+                     local->block[index].length, access);
     if (!(*mr)) {
         perror("Failed to register local dest ram block!\n");
         return -1;
@@ -1508,7 +1508,7 @@ static uint64_t qemu_rdma_poll(RDMAContext *rdma,
     }
 
     if (ret < 0) {
-        error_report("ibv_poll_cq return %d (%s)!", ret, lc->id_str);
+        SMC_ERR("ibv_poll_cq() failed ret=%d", ret);
         return ret;
     }
 
@@ -1516,11 +1516,8 @@ static uint64_t qemu_rdma_poll(RDMAContext *rdma,
     SMC_LOG(GEN, "wc.wr_id=%" PRIu64 " wr_id=%" PRIu64, wc.wr_id, wr_id);
 
     if (wc.status != IBV_WC_SUCCESS) {
-        fprintf(stderr, "ibv_poll_cq wc.status=%d %s! (%s)\n",
-                        wc.status, ibv_wc_status_str(wc.status), lc->id_str);
-        fprintf(stderr, "ibv_poll_cq wrid=%s! (%s)\n", wrid_desc[wr_id],
-                                                        lc->id_str);
-
+        SMC_ERR("wc.status=%d(%s) wr_id=%" PRIu64 "(%s)", wc.status,
+                ibv_wc_status_str(wc.status), wc.wr_id, wrid_desc[wr_id]);
         return -1;
     }
 
@@ -2763,13 +2760,13 @@ err:
 
 static int qemu_rdma_connect(RDMAContext *rdma, Error **errp)
 {
-    RDMACapabilities cap = {
-                                .version = RDMA_CONTROL_VERSION_CURRENT,
-                                .flags = 0,
-                                .keepalive_rkey = rdma->keepalive_mr->rkey,
-                                .keepalive_addr = (uint64_t) (uintptr_t) &rdma->keepalive,
+    RDMACapabilities cap = { .version = RDMA_CONTROL_VERSION_CURRENT,
+                             .flags = 0,
+                             .keepalive_rkey = rdma->keepalive_mr->rkey,
+                             .keepalive_addr = (uint64_t) (uintptr_t) &rdma->keepalive,
                            };
     struct rdma_conn_param conn_param = { .initiator_depth = 2,
+                                          .responder_resources = 2,
                                           .retry_count = 5,
                                           .private_data = &cap,
                                           .private_data_len = sizeof(cap),
@@ -3541,7 +3538,7 @@ err:
 static int qemu_rdma_accept(RDMAContext *rdma)
 {
     RDMACapabilities cap;
-    struct rdma_conn_param conn_param = {
+    struct rdma_conn_param conn_param = {   .initiator_depth = 2,
                                             .responder_resources = 2,
                                             .private_data = &cap,
                                             .private_data_len = sizeof(cap),
@@ -4070,6 +4067,7 @@ static int smc_rdma_recv_dirty_info(RDMAContext *rdma, SMCInfo *smc_info)
     int total_len = -1;
     int pages_to_save;
 
+    SMC_LOG(FETCH, "starts");
     smc_dirty_pages_reset(smc_info);
     do {
         ret = qemu_rdma_exchange_recv(rdma, &head, SMC_RDMA_CONTROL_DIRTY_INFO);
@@ -4170,8 +4168,8 @@ void smc_recv_prefetch_info(void *opaque, SMCInfo *smc_info,
     int nb_pages = 0;
     int pages_to_save;
 
+    SMC_LOG(FETCH, "request_prefetch=%d", request_info);
     smc_prefetch_pages_reset(smc_info);
-
     /* Inform the dest whether we need the prefetched pages info now. */
     ret = qemu_rdma_post_send_control(rdma, NULL, &cmd);
     if (ret < 0) {
@@ -4295,25 +4293,6 @@ static int smc_rdma_send_prefetch_info(RDMAContext *rdma, SMCInfo *smc_info)
     return 0;
 }
 
-static int smc_test_generate_prefetch_pages(SMCInfo *smc_info)
-{
-    int i;
-    SMCDirtyPage *page;
-    int nb_pages;
-
-    if (smc_prefetch_pages_count(smc_info) != 0) {
-        return 0;
-    }
-    page = smc_dirty_pages_info(smc_info);
-    nb_pages = smc_dirty_pages_count(smc_info);
-    for (i  = 0; i < nb_pages; ++i) {
-        smc_prefetch_pages_insert(smc_info, page->block_offset, page->offset,
-                                  page->size, 0);
-        page++;
-    }
-    return nb_pages;
-}
-
 /* Before calling this function, there are two RR in queue: RDMA_WRID_DATA and
  * RDMA_WRID_READY.
  * return vlaue:
@@ -4327,6 +4306,7 @@ static int smc_try_recv_prefetch_cmd(RDMAContext *rdma, SMCInfo *smc_info)
     uint64_t wr_id;
     RDMAControlHeader head;
 
+    SMC_LOG(FETCH, "starts");
     ret = qemu_rdma_poll(rdma, lc, &wr_id, NULL);
     if (ret < 0) {
         SMC_ERR("qemu_rdma_poll() failed ret=%d", ret);
@@ -4349,6 +4329,8 @@ static int smc_try_recv_prefetch_cmd(RDMAContext *rdma, SMCInfo *smc_info)
 
     SMC_ASSERT((head.type == SMC_RDMA_CONTROL_NO_PREFETCH_INFO) ||
                (head.type == SMC_RDMA_CONTROL_REQ_PREFETCH_INFO));
+
+    SMC_LOG(FETCH, "recv prefetch cmd=%d", head.type);
 
     return head.type;
 }
@@ -4378,14 +4360,287 @@ static int smc_block_recv_prefetch_cmd(RDMAContext *rdma, SMCInfo *smc_info)
     return head.type;
 }
 
+static int smc_rdma_read(RDMAContext *rdma, RDMALocalBlock *block,
+                         uint64_t offset, uint64_t size, uint32_t page_idx)
+{
+    struct ibv_sge sge;
+    struct ibv_send_wr send_wr = { 0 };
+    struct ibv_send_wr *bad_wr;
+    int ret;
+    RDMALocalContext *lc = &rdma->lc_remote;
+
+    SMC_LOG(FETCH, "offset=%" PRIu64 " size=%" PRIu64 " page_idx=%" PRIu32,
+            offset, size, page_idx);
+    SMC_ASSERT(block->is_ram_block);
+    send_wr.wr.rdma.rkey = block->remote_rkey;
+    sge.lkey = block->mr->lkey;
+    send_wr.wr_id = qemu_rdma_make_wrid(RDMA_WRID_RDMA_READ_REMOTE,
+                                        page_idx, 0);
+    sge.length = size;
+    sge.addr = (uintptr_t)(block->local_host_addr + offset);
+    send_wr.opcode = IBV_WR_RDMA_READ;
+    send_wr.send_flags = IBV_SEND_SIGNALED;
+    send_wr.sg_list = &sge;
+    send_wr.num_sge = 1;
+    send_wr.wr.rdma.remote_addr = block->remote_host_addr + offset;
+
+    ret = ibv_post_send(lc->qp, &send_wr, &bad_wr);
+    if (ret > 0) {
+        SMC_ERR("ibv_post_send() failed ret=%d", ret);
+        return -ret;
+    }
+    return 0;
+}
+
+static int smc_block_for_cq(RDMAContext *rdma, RDMALocalContext *lc,
+                            uint64_t *wr_id_out)
+{
+    int ret = 0;
+    struct ibv_cq *cq;
+    uint64_t wr_id;
+    void *cq_ctx;
+    int num_cq_events = 0;
+
+    SMC_LOG(FETCH, "starts");
+    ret = qemu_rdma_poll(rdma, lc, &wr_id, NULL);
+    if (ret < 0) {
+        SMC_ERR("qemu_rdma_poll() failed");
+        return ret;
+    }
+    if (wr_id != RDMA_WRID_NONE) {
+        SMC_LOG(FETCH, "got wr_id=%" PRIu64, wr_id);
+        *wr_id_out = wr_id;
+        return 0;
+    }
+    ret = ibv_req_notify_cq(lc->cq, 0);
+    if (ret) {
+        SMC_ERR("ibv_req_notify_cq() failed");
+        return -ret;
+    }
+
+    while (true) {
+        if (qemu_in_coroutine()) {
+            SMC_LOG(FETCH, "yield until fd readable");
+            yield_until_fd_readable(lc->comp_chan->fd);
+            SMC_LOG(FETCH, "wake up due to fd readable");
+        }
+
+        ret = ibv_get_cq_event(lc->comp_chan, &cq, &cq_ctx);
+        if (ret < 0) {
+            SMC_ERR("ibv_get_cq_event() failed");
+            return ret;
+        }
+        num_cq_events++;
+
+        ret = ibv_req_notify_cq(lc->cq, 0);
+        if (ret) {
+            SMC_ERR("ibv_req_notify_cq() failed");
+            return -ret;
+        }
+
+        ret = qemu_rdma_poll(rdma, lc, &wr_id, NULL);
+        if (ret < 0) {
+            SMC_ERR("qemu_rdma_poll() failed");
+            goto out;
+        }
+        if (wr_id == RDMA_WRID_NONE) {
+            continue;
+        }
+
+        *wr_id_out = wr_id;
+        ret = 0;
+        break;
+    }
+
+out:
+    ibv_ack_cq_events(cq, num_cq_events);
+    return ret;
+}
+
+static int smc_try_ack_rdma_read(RDMAContext *rdma, SMCInfo *smc_info,
+                                 bool block, int *ack_idx)
+{
+    RDMALocalContext *lc = &rdma->lc_remote;
+    int ret = 0;
+    uint64_t wr_id;
+    RDMAControlHeader head;
+    uint64_t wr_id_masked;
+    uint64_t index;
+
+    SMC_LOG(FETCH, "is_blocked=%d", block);
+    if (block) {
+        ret = smc_block_for_cq(rdma, lc, &wr_id);
+        if (ret < 0) {
+            return ret;
+        }
+    } else {
+        ret = qemu_rdma_poll(rdma, lc, &wr_id, NULL);
+        if (ret < 0) {
+            SMC_ERR("qemu_rdma_poll() failed ret=%d", ret);
+            return ret;
+        }
+
+        if (wr_id == RDMA_WRID_NONE) {
+            *ack_idx = -1;
+            SMC_LOG(FETCH, "no WR finished");
+            return 0;
+        }
+    }
+
+    SMC_LOG(FETCH, "got wr_id=%" PRIu64, wr_id);
+    wr_id_masked = wr_id & RDMA_WRID_TYPE_MASK;
+    if (wr_id_masked == RDMA_WRID_RECV_CONTROL + RDMA_WRID_DATA) {
+        /* Recv the prefetch cmd */
+        network_to_control((void *)rdma->wr_data[RDMA_WRID_DATA].control);
+        memcpy(&head, rdma->wr_data[RDMA_WRID_DATA].control, sizeof(head));
+
+        SMC_ASSERT((head.type == SMC_RDMA_CONTROL_NO_PREFETCH_INFO) ||
+                   (head.type == SMC_RDMA_CONTROL_REQ_PREFETCH_INFO));
+
+        SMC_LOG(GEN, "recv prefetch cmd=%d while prefetching pages", head.type);
+
+        return head.type;
+    }
+
+    SMC_ASSERT(wr_id_masked == RDMA_WRID_RDMA_READ_REMOTE);
+    index = (wr_id & RDMA_WRID_BLOCK_MASK) >> RDMA_WRID_BLOCK_SHIFT;
+    SMC_ASSERT(test_bit(index, smc_info->prefetch_bm));
+    clear_bit(index, smc_info->prefetch_bm);
+    *ack_idx = index;
+    SMC_LOG(GEN, "prefetch page idx=%" PRIu64 " completed", index);
+    return 0;
+}
+
+static int smc_do_prefetch_page(RDMAContext *rdma, SMCInfo *smc_info,
+                                 SMCFetchPage *page, bool in_checkpoint)
+{
+    RDMALocalBlock *block;
+    uint8_t *host_addr;
+    int ret = 0;
+
+    SMC_LOG(FETCH, "prefetch page block_offset=%" PRIu64 " offset=%" PRIu64
+            " size=%" PRIu64, page->block_offset, page->offset, page->size);
+    block = g_hash_table_lookup(rdma->blockmap,
+                                (void *)(uintptr_t)page->block_offset);
+    SMC_ASSERT(block);
+    host_addr = block->local_host_addr + page->offset;
+    /* The bit will be cleared when the RDMA READ completes */
+    set_bit(page->idx, smc_info->prefetch_bm);
+    if (in_checkpoint) {
+        /* Record it into a hash table so that we can tell if one page is
+         * prefetched when we are committing the checkpoint.
+         */
+        smc_prefetch_map_insert(smc_info, page->block_offset + page->offset,
+                                page);
+    } else {
+        /* This page is not in the checkpoint, so we need to CoW it to save
+         * its last correct content.
+         */
+        smc_backup_pages_insert(smc_info, page->block_offset, page->offset,
+                                page->size, host_addr);
+    }
+
+    ret = smc_rdma_read(rdma, block, page->offset, page->size, page->idx);
+
+    return ret;
+}
+
+/* Prefetch @nb_pages pages from the src.
+ * @complete_pages: num of the actual prefetched pages;
+ * return 0, nothing happened but prefetching pages;
+ * return negative, errors occured;
+ * return positive, recv the prefetch cmd while prefetching, complete the
+ * prefetch, and return the prefetch cmd type.
+ */
+static int smc_do_prefetch_dirty_pages(RDMAContext *rdma, SMCInfo *smc_info,
+                                       int nb_pages, int *complete_pages)
+{
+    int nb_dirty_pages = smc_dirty_pages_count(smc_info);
+    int nb_fetch_pages = smc_prefetch_pages_count(smc_info);
+    int ack_idx;
+    int nb_ack = 0;
+    int i;
+    SMCDirtyPage *dirty_page = smc_dirty_pages_info(smc_info) + nb_fetch_pages;
+    SMCFetchPage *fetch_page;
+    int ret;
+    int cmd = -1;
+
+    SMC_LOG(FETCH, "starts, has fetched %d/%d pages", nb_fetch_pages,
+            nb_dirty_pages);
+    if (nb_fetch_pages == nb_dirty_pages) {
+        *complete_pages = 0;
+        return 0;
+    }
+    nb_pages = min(nb_pages, nb_dirty_pages - nb_fetch_pages);
+    for (i = 0; i < nb_pages; ++i) {
+        fetch_page = smc_prefetch_pages_insert(smc_info,
+                                               dirty_page->block_offset,
+                                               dirty_page->offset,
+                                               dirty_page->size, 0);
+        ret = smc_do_prefetch_page(rdma, smc_info, fetch_page, true);
+        if (ret < 0) {
+            return ret;
+        }
+
+        /* We see if there are any RDMA READ have completed and calculate their
+         * hash concurrently.
+         */
+        ret = smc_try_ack_rdma_read(rdma, smc_info, false, &ack_idx);
+        if (ret < 0) {
+            return ret;
+        } else if (ret > 0) {
+            /* We have recv the prefetch cmd, ret is the cmd type */
+            SMC_ASSERT(cmd == -1);
+            cmd = ret;
+        } else {
+            if (ack_idx != -1) {
+                /* @ack_idx is the idex of the fetch_page which has been prefetched
+                 * completely.
+                 */
+                smc_prefetch_page_cal_hash(smc_info, ack_idx);
+                ++nb_ack;
+            }
+        }
+
+        dirty_page++;
+    }
+
+    while (nb_ack < nb_pages) {
+        /* Block until any WR is finished */
+        ret = smc_try_ack_rdma_read(rdma, smc_info, true, &ack_idx);
+        if (ret < 0) {
+            return ret;
+        } else if (ret > 0) {
+            SMC_ASSERT(cmd == -1);
+            cmd = ret;
+        } else {
+            SMC_ASSERT(ack_idx != -1);
+            smc_prefetch_page_cal_hash(smc_info, ack_idx);
+            ++nb_ack;
+        }
+    }
+
+    *complete_pages = nb_pages;
+    if (cmd != -1) {
+        return cmd;
+    }
+    return 0;
+}
+
 int smc_prefetch_dirty_pages(void *opaque, SMCInfo *smc_info)
 {
     QEMUFileRDMA *rfile = opaque;
     RDMAContext *rdma = rfile->rdma;
     int cmd = -1;
     int ret = 0;
+    const int pages_per_round = 10;
+    int pages;
 
+    SMC_LOG(FETCH, "starts");
+    smc_set_state(smc_info, SMC_STATE_PREFETCH_START);
     smc_prefetch_pages_reset(smc_info);
+    smc_backup_pages_reset(smc_info);
+    smc_prefetch_map_reset(smc_info);
     while (true) {
         ret = smc_try_recv_prefetch_cmd(rdma, smc_info);
         if (ret < 0) {
@@ -4394,8 +4649,9 @@ int smc_prefetch_dirty_pages(void *opaque, SMCInfo *smc_info)
             /* The src havn't issue the prefetch cmd yet, go on prefetching dirty
              * pages.
              */
-            ret = smc_test_generate_prefetch_pages(smc_info);
-            if (ret == 0) {
+            ret = smc_do_prefetch_dirty_pages(rdma, smc_info, pages_per_round,
+                                              &pages);
+            if (ret == 0 && pages == 0) {
                 /* All pages have been prefetched, block for the prefetch cmd.
                  * May be disconnected with the src.
                  */
@@ -4403,6 +4659,12 @@ int smc_prefetch_dirty_pages(void *opaque, SMCInfo *smc_info)
                 if (ret < 0) {
                     return ret;
                 }
+                cmd = ret;
+                break;
+            } else if (ret < 0) {
+                return ret;
+            } else if (ret > 0) {
+                /* Recv the prefetch cmd while prefetching pages */
                 cmd = ret;
                 break;
             }
@@ -4418,10 +4680,18 @@ int smc_prefetch_dirty_pages(void *opaque, SMCInfo *smc_info)
          * prefetched pages.
          */
         SMC_LOG(GEN, "abandon prefetched pages");
+        smc_set_state(smc_info, SMC_STATE_PREFETCH_ABANDON);
+
+        smc_recover_backup_pages(smc_info);
+
+        smc_prefetch_pages_reset(smc_info);
+        smc_backup_pages_reset(smc_info);
+        smc_prefetch_map_reset(smc_info);
         return 0;
     } else {
         SMC_ASSERT(ret == SMC_RDMA_CONTROL_REQ_PREFETCH_INFO);
         ret = smc_rdma_send_prefetch_info(rdma, smc_info);
+        smc_set_state(smc_info, SMC_STATE_PREFETCH_DONE);
         return ret;
     }
 }

@@ -1275,7 +1275,7 @@ static void *mc_thread(void *opaque)
          * We should decide if we have time to receive the prefetched pages info
          * or not according to the @wait_time.
          */
-        smc_recv_prefetch_info(f_opaque, &glo_smc_info, true);
+        smc_recv_prefetch_info(f_opaque, &glo_smc_info, false);
     }
 
     goto out;
@@ -1419,6 +1419,7 @@ void mc_process_incoming_checkpoints_if_requested(QEMUFile *f)
     }
 
     while (true) {
+        smc_set_state(&glo_smc_info, SMC_STATE_TRANSACTION_START);
         checkpoint_received = false;
         ret = mc_recv(f, MC_TRANSACTION_ANY, &action);
         if (ret < 0) {
@@ -1499,7 +1500,13 @@ void mc_process_incoming_checkpoints_if_requested(QEMUFile *f)
                 slab = QTAILQ_NEXT(slab, node);
             }
 
+            if (qemu_file_get_error(f) < 0) {
+                SMC_ERR("QEMUFile error while receiving checkpoint, rollback");
+                goto rollback;
+            }
+
             checkpoint_received = true;
+            smc_set_state(&glo_smc_info, SMC_STATE_RECV_CHECKPOINT);
             break;
         default:
             fprintf(stderr, "Unknown MC action: %" PRIu64 "\n", action);
@@ -1567,6 +1574,8 @@ rollback:
     fprintf(stderr, "MC: checkpointing stopped. Recovering VM\n");
     if (blk_enabled)
         blk_stop_replication(true, &local_err);
+
+    smc_rollback_with_prefetch(&glo_smc_info);
     goto out;
 err:
     fprintf(stderr, "Micro Checkpointing Protocol Failed\n");

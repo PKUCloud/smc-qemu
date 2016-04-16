@@ -3,6 +3,7 @@
 
 #include "qemu/typedefs.h"
 #include "qemu-common.h"
+#include "smc-debug.h"
 
 /* Info about a dirty page within a chunk */
 typedef struct SMCDirtyPage {
@@ -27,13 +28,40 @@ typedef struct SMCFetchPage {
     uint64_t block_offset;
     uint64_t offset;
     uint64_t size;
+    uint32_t idx;   /* Index in SMCSet */
     SMC_HASH hash;
 } SMCFetchPage;
+
+typedef struct SMCBackupPage {
+    uint64_t block_offset;
+    uint64_t offset;
+    uint64_t size;
+    uint8_t *data;
+    uint8_t *host_addr;
+} SMCBackupPage;
+
+#define SMC_MAX_PREFETCH_PAGES  20480   /* Max prefetched pages per round */
+
+#define SMC_STATE_RECV_CHECKPOINT       0
+#define SMC_STATE_PREFETCH_START        1
+#define SMC_STATE_PREFETCH_DONE         2
+#define SMC_STATE_PREFETCH_ABANDON      3
+#define SMC_STATE_TRANSACTION_START     4
 
 typedef struct SMCInfo {
     bool init;
     SMCSet dirty_pages;
     SMCSet prefetch_pages;
+    /* Pay attention to maintain the dynamically allocated memory */
+    SMCSet backup_pages;
+    /* Prefetch transit bitmap indexed by SMCFetchPage.idx */
+    unsigned long *prefetch_bm;
+    /* Used to find whether a given page is a the prefetch list when the dst
+     * is committing the checkpoint.
+     * [page_physical_addr] -> the pointer of the corresponding SMCFetchPage
+     */
+    GHashTable *prefetch_map;
+    int state;
 } SMCInfo;
 
 extern SMCInfo glo_smc_info;
@@ -46,8 +74,10 @@ void smc_dirty_pages_reset(SMCInfo *smc_info);
 void smc_dirty_pages_insert_from_buf(SMCInfo *smc_info, const void *buf,
                                      int nb_pages);
 void smc_prefetch_pages_reset(SMCInfo *smc_info);
-void smc_prefetch_pages_insert(SMCInfo *smc_info, uint64_t block_offset,
-                               uint64_t offset, uint64_t size, SMC_HASH hash);
+SMCFetchPage *smc_prefetch_pages_insert(SMCInfo *smc_info,
+                                        uint64_t block_offset,
+                                        uint64_t offset, uint64_t size,
+                                        SMC_HASH hash);
 void smc_prefetch_pages_insert_from_buf(SMCInfo *smc_info, const void *buf,
                                         int nb_pages);
 
@@ -58,6 +88,13 @@ void smc_recv_prefetch_info(void *opaque, SMCInfo *smc_info,
 void smc_sync_notice_dest_to_recv(void *opaque, SMCInfo *smc_info);
 int smc_sync_src_ready_to_recv(void *opaque, SMCInfo *smc_info);
 int smc_prefetch_dirty_pages(void *opaque, SMCInfo *smc_info);
+void smc_backup_pages_insert(SMCInfo *smc_info, uint64_t block_offset,
+                             uint64_t offset, uint64_t size,
+                             uint8_t *data);
+void smc_backup_pages_reset(SMCInfo *smc_info);
+void smc_recover_backup_pages(SMCInfo *smc_info);
+void smc_prefetch_page_cal_hash(SMCInfo *smc_info, int index);
+void smc_rollback_with_prefetch(SMCInfo *smc_info);
 
 static inline int smc_dirty_pages_count(SMCInfo *smc_info)
 {
@@ -82,5 +119,41 @@ static inline int smc_prefetch_pages_count(SMCInfo *smc_info)
 static inline SMCFetchPage *smc_prefetch_pages_info(SMCInfo *smc_info)
 {
     return (SMCFetchPage *)(smc_info->prefetch_pages.eles);
+}
+
+static inline SMCBackupPage *smc_backup_pages_info(SMCInfo *smc_info)
+{
+    return (SMCBackupPage *)(smc_info->backup_pages.eles);
+}
+
+static inline void smc_prefetch_map_reset(SMCInfo *smc_info)
+{
+    g_hash_table_remove_all(smc_info->prefetch_map);
+}
+
+static inline void smc_prefetch_map_insert(SMCInfo *smc_info, uint64_t phy_addr,
+                                           SMCFetchPage *page)
+{
+    gpointer key = (void *)(uintptr_t)phy_addr;
+
+    SMC_ASSERT(page);
+    SMC_ASSERT(g_hash_table_lookup(smc_info->prefetch_map, key) == NULL);
+
+    g_hash_table_insert(smc_info->prefetch_map, key, page);
+}
+
+static inline void smc_prefetch_map_lookup(SMCInfo *smc_info, uint64_t phy_addr)
+{
+    g_hash_table_lookup(smc_info->prefetch_map, (void *)(uintptr_t)phy_addr);
+}
+
+static inline void smc_set_state(SMCInfo *smc_info, int state)
+{
+    smc_info->state = state;
+}
+
+static inline int smc_get_state(SMCInfo *smc_info)
+{
+    return smc_info->state;
 }
 #endif

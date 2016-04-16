@@ -3,6 +3,7 @@
 #include <memory.h>
 #include <inttypes.h>
 
+#include "qemu/bitmap.h"
 #include "smc.h"
 #include "smc-debug.h"
 
@@ -39,6 +40,7 @@ static void smc_set_resize(SMCSet *smc_set, int new_cap)
 {
     uint8_t *data;
 
+    SMC_ASSERT(new_cap > smc_set->cap);
     data = (uint8_t *)g_malloc0(new_cap * smc_set->ele_size);
     if (smc_set->nb_eles > 0) {
         memcpy(data, smc_set->eles, min(smc_set->nb_eles, new_cap) *
@@ -50,15 +52,19 @@ static void smc_set_resize(SMCSet *smc_set, int new_cap)
     smc_set->nb_eles = min(smc_set->nb_eles, new_cap);
 }
 
-static void smc_set_insert(SMCSet *smc_set, const void *ele)
+static void *smc_set_insert(SMCSet *smc_set, const void *ele)
 {
+    uint8_t *new_ele;
+
     if (smc_set->cap == smc_set->nb_eles) {
         smc_set_resize(smc_set, smc_set->cap + SMC_SET_INIT_CAP);
     }
 
-    memcpy(smc_set->eles + smc_set->nb_eles * smc_set->ele_size, ele,
-           smc_set->ele_size);
+    new_ele = smc_set->eles + smc_set->nb_eles * smc_set->ele_size;
+    memcpy(new_ele, ele, smc_set->ele_size);
     smc_set->nb_eles++;
+
+    return new_ele;
 }
 
 static void smc_set_insert_from_buf(SMCSet *smc_set, const void *buf,
@@ -85,6 +91,10 @@ void smc_init(SMCInfo *smc_info)
     memset(smc_info, 0, sizeof(*smc_info));
     smc_set_init(&smc_info->dirty_pages, sizeof(SMCDirtyPage));
     smc_set_init(&smc_info->prefetch_pages, sizeof(SMCFetchPage));
+    smc_set_init(&smc_info->backup_pages, sizeof(SMCBackupPage));
+    smc_info->prefetch_bm = bitmap_new(SMC_MAX_PREFETCH_PAGES);
+    bitmap_clear(smc_info->prefetch_bm, 0, SMC_MAX_PREFETCH_PAGES);
+    smc_info->prefetch_map = g_hash_table_new(g_direct_hash, g_direct_equal);
     smc_info->init = true;
 }
 
@@ -94,6 +104,11 @@ void smc_exit(SMCInfo *smc_info)
     SMC_ASSERT(smc_info->init);
     smc_set_free(&smc_info->dirty_pages);
     smc_set_free(&smc_info->prefetch_pages);
+    smc_backup_pages_reset(smc_info);
+    smc_set_free(&smc_info->backup_pages);
+    g_free(smc_info->prefetch_bm);
+    g_hash_table_destroy(smc_info->prefetch_map);
+    smc_info->prefetch_bm = NULL;
     smc_info->init = false;
 }
 
@@ -134,19 +149,22 @@ void smc_prefetch_pages_insert_from_buf(SMCInfo *smc_info, const void *buf,
     smc_set_insert_from_buf(&smc_info->prefetch_pages, buf, nb_pages);
 }
 
-void smc_prefetch_pages_insert(SMCInfo *smc_info, uint64_t block_offset,
-                               uint64_t offset, uint64_t size, SMC_HASH hash)
+SMCFetchPage *smc_prefetch_pages_insert(SMCInfo *smc_info,
+                                        uint64_t block_offset,
+                                        uint64_t offset, uint64_t size,
+                                        SMC_HASH hash)
 {
     SMCFetchPage page  = { .block_offset = block_offset,
                            .offset = offset,
                            .size = size,
                            .hash = hash,
+                           .idx = smc_info->prefetch_pages.nb_eles,
                          };
 
     SMC_ASSERT(smc_info->init);
     SMC_LOG(GEN, "add block_offset=%" PRIu64 " offset=%" PRIu64
             " size=%" PRIu64, block_offset, offset, size);
-    smc_set_insert(&smc_info->prefetch_pages, &page);
+    return (SMCFetchPage *)smc_set_insert(&smc_info->prefetch_pages, &page);
 }
 
 void smc_prefetch_pages_reset(SMCInfo *smc_info)
@@ -154,4 +172,87 @@ void smc_prefetch_pages_reset(SMCInfo *smc_info)
     SMC_LOG(GEN, "prefetch_pages=%d", smc_info->prefetch_pages.nb_eles);
     SMC_ASSERT(smc_info->init);
     smc_set_reset(&smc_info->prefetch_pages);
+}
+
+void smc_backup_pages_reset(SMCInfo *smc_info)
+{
+    SMCBackupPage *page = (SMCBackupPage *)(smc_info->backup_pages.eles);
+    int nb_pages = smc_info->backup_pages.nb_eles;
+    int i;
+
+    SMC_LOG(GEN, "backup_pages=%d", nb_pages);
+    SMC_ASSERT(smc_info->init);
+    for (i = 0; i < nb_pages; ++i) {
+        g_free(page->data);
+        page->data = NULL;
+        page++;
+    }
+    smc_set_reset(&smc_info->backup_pages);
+}
+
+void smc_backup_pages_insert(SMCInfo *smc_info, uint64_t block_offset,
+                             uint64_t offset, uint64_t size,
+                             uint8_t *data)
+{
+    SMCBackupPage page = { .block_offset = block_offset,
+                           .offset = offset,
+                           .size = size,
+                           .host_addr = data,
+                         };
+    SMC_ASSERT(smc_info->init);
+    SMC_LOG(GEN, "add block_offset=%" PRIu64 " offset=%" PRIu64
+            " size=%" PRIu64, block_offset, offset, size);
+    page.data = (uint8_t *)g_malloc(size);
+    memcpy(page.data, data, size);
+    smc_set_insert(&smc_info->backup_pages, &page);
+}
+
+void smc_prefetch_page_cal_hash(SMCInfo *smc_info, int index)
+{
+    return;
+}
+
+void smc_recover_backup_pages(SMCInfo *smc_info)
+{
+    SMCBackupPage *page = (SMCBackupPage *)(smc_info->backup_pages.eles);
+    int nb_pages = smc_info->backup_pages.nb_eles;
+    int i;
+
+    SMC_LOG(GEN, "backup_pages=%d", nb_pages);
+    for (i = 0; i < nb_pages; ++i) {
+        memcpy(page->host_addr, page->data, page->size);
+        g_free(page->data);
+        page->data = NULL;
+        page++;
+    }
+
+    smc_info->backup_pages.nb_eles = 0;
+}
+
+void smc_rollback_with_prefetch(SMCInfo *smc_info)
+{
+    switch (smc_info->state) {
+    case SMC_STATE_TRANSACTION_START:
+    case SMC_STATE_PREFETCH_START:
+    case SMC_STATE_PREFETCH_DONE:
+        SMC_LOG(GEN, "rollback with state=%d", smc_info->state);
+        smc_recover_backup_pages(smc_info);
+        break;
+
+    case SMC_STATE_PREFETCH_ABANDON:
+        SMC_ERR("rollback with state=%s","SMC_STATE_PREFETCH_ABANDON");
+        break;
+
+    case SMC_STATE_RECV_CHECKPOINT:
+        SMC_ERR("rollback with state=%s","SMC_STATE_RECV_CHECKPOINT");
+        break;
+
+    default:
+        SMC_ERR("rollback with unknown state=%d", smc_info->state);
+        break;
+    }
+
+    smc_prefetch_pages_reset(smc_info);
+    smc_backup_pages_reset(smc_info);
+    smc_prefetch_map_reset(smc_info);
 }

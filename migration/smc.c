@@ -6,6 +6,7 @@
 #include "qemu/bitmap.h"
 #include "smc.h"
 #include "smc-debug.h"
+#include "jhash.h"
 
 #define SMC_SET_INIT_CAP    256
 
@@ -67,6 +68,14 @@ static void *smc_set_insert(SMCSet *smc_set, const void *ele)
     return new_ele;
 }
 
+static void *smc_set_get_idx(SMCSet *smc_set, int idx)
+{
+    if (idx >= smc_set->nb_eles || idx < 0) {
+        return NULL;
+    }
+    return smc_set->eles + idx * smc_set->ele_size;
+}
+
 static void smc_set_insert_from_buf(SMCSet *smc_set, const void *buf,
                                     int nb_eles)
 {
@@ -84,7 +93,7 @@ static void smc_set_insert_from_buf(SMCSet *smc_set, const void *buf,
     smc_set->nb_eles += nb_eles;
 }
 
-void smc_init(SMCInfo *smc_info)
+void smc_init(SMCInfo *smc_info, void *opaque)
 {
     SMC_LOG(INIT, "");
     SMC_ASSERT(!smc_info->init);
@@ -95,6 +104,7 @@ void smc_init(SMCInfo *smc_info)
     smc_info->prefetch_bm = bitmap_new(SMC_MAX_PREFETCH_PAGES);
     bitmap_clear(smc_info->prefetch_bm, 0, SMC_MAX_PREFETCH_PAGES);
     smc_info->prefetch_map = g_hash_table_new(g_direct_hash, g_direct_equal);
+    smc_info->opaque = opaque;
     smc_info->init = true;
 }
 
@@ -229,7 +239,19 @@ void *smc_backup_pages_insert_empty(SMCInfo *smc_info, uint64_t block_offset,
 
 void smc_prefetch_page_cal_hash(SMCInfo *smc_info, int index)
 {
-    return;
+    static SMC_HASH hash_val = 0;
+    SMCFetchPage *fetch_page;
+    uint8_t *data;
+
+    fetch_page = (SMCFetchPage *)smc_set_get_idx(&smc_info->prefetch_pages,
+                                                 index);
+    SMC_ASSERT(fetch_page && (fetch_page->idx == index));
+    data = smc_host_addr_from_offset(smc_info->opaque, fetch_page->block_offset,
+                                     fetch_page->offset);
+    hash_val = jhash2((uint32_t *)data, fetch_page->size / 4, hash_val);
+    fetch_page->hash = hash_val;
+
+    SMC_LOG(FETCH, "fetch_page idx=%d hash=%" PRIu32, index, hash_val);
 }
 
 void smc_recover_backup_pages(SMCInfo *smc_info)

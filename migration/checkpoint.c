@@ -1027,7 +1027,7 @@ static void *mc_thread(void *opaque)
     Error *local_err = NULL;
     bool blk_enabled = false;
 
-    smc_init(&glo_smc_info);
+    smc_init(&glo_smc_info, f_opaque);
 
     if (!(mc_control = qemu_fopen_socket(fd, "rb"))) {
         fprintf(stderr, "Failed to setup read MC control\n");
@@ -1367,7 +1367,7 @@ void mc_process_incoming_checkpoints_if_requested(QEMUFile *f)
         return;
     }
 
-    smc_init(&glo_smc_info);
+    smc_init(&glo_smc_info, f_opaque);
 
     if (!(mc_control = qemu_fopen_socket(fd, "wb"))) {
         fprintf(stderr, "Could not make incoming MC control channel\n");

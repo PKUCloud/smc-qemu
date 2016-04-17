@@ -25,7 +25,7 @@ typedef struct SMCSet {
     int ele_size;   /* sizeof(struct) */
 } SMCSet;
 
-typedef uint64_t    SMC_HASH;
+typedef uint32_t    SMC_HASH;
 
 typedef struct SMCFetchPage {
     uint64_t block_offset;
@@ -66,11 +66,12 @@ typedef struct SMCInfo {
     GHashTable *prefetch_map;
     int state;
     bool need_rollback;
+    void *opaque;   /* QEMUFileRDMA */
 } SMCInfo;
 
 extern SMCInfo glo_smc_info;
 
-void smc_init(SMCInfo *smc_info);
+void smc_init(SMCInfo *smc_info, void *opaque);
 void smc_exit(SMCInfo *smc_info);
 void smc_dirty_pages_insert(SMCInfo *smc_info, uint64_t block_offset,
                             uint64_t offset, uint32_t size, uint32_t flags);
@@ -103,6 +104,9 @@ void smc_recover_backup_pages(SMCInfo *smc_info);
 void smc_prefetch_page_cal_hash(SMCInfo *smc_info, int index);
 void smc_rollback_with_prefetch(SMCInfo *smc_info);
 bool smc_loadvm_need_check_prefetch(SMCInfo *smc_info);
+
+uint8_t *smc_host_addr_from_offset(void *opaque, uint64_t block_offset,
+                                   uint64_t offset);
 
 static inline int smc_dirty_pages_count(SMCInfo *smc_info)
 {

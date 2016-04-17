@@ -4511,6 +4511,19 @@ static int smc_try_ack_rdma_read(RDMAContext *rdma, SMCInfo *smc_info,
     return 0;
 }
 
+uint8_t *smc_host_addr_from_offset(void *opaque, uint64_t block_offset,
+                                   uint64_t offset)
+{
+    QEMUFileRDMA *rfile = opaque;
+    RDMAContext *rdma = rfile->rdma;
+    RDMALocalBlock *block;
+
+    block = g_hash_table_lookup(rdma->blockmap,
+                                (void *)(uintptr_t)block_offset);
+    SMC_ASSERT(block);
+    return block->local_host_addr + offset;
+}
+
 static int smc_do_prefetch_page(RDMAContext *rdma, SMCInfo *smc_info,
                                  SMCFetchPage *page, bool in_checkpoint)
 {

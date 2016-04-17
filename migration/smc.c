@@ -239,7 +239,7 @@ void *smc_backup_pages_insert_empty(SMCInfo *smc_info, uint64_t block_offset,
 
 void smc_prefetch_page_cal_hash(SMCInfo *smc_info, int index)
 {
-    static SMC_HASH hash_val = 0;
+    SMC_HASH hash_val;
     SMCFetchPage *fetch_page;
     uint8_t *data;
 
@@ -248,7 +248,8 @@ void smc_prefetch_page_cal_hash(SMCInfo *smc_info, int index)
     SMC_ASSERT(fetch_page && (fetch_page->idx == index));
     data = smc_host_addr_from_offset(smc_info->opaque, fetch_page->block_offset,
                                      fetch_page->offset);
-    hash_val = jhash2((uint32_t *)data, fetch_page->size / 4, hash_val);
+    hash_val = jhash2((uint32_t *)data, fetch_page->size / 4,
+                      SMC_JHASH_INIT_VAL);
     fetch_page->hash = hash_val;
 
     SMC_LOG(FETCH, "fetch_page idx=%d hash=%" PRIu32, index, hash_val);

@@ -927,12 +927,9 @@ static int ram_save_compressed_page(QEMUFile *f, RAMBlock *block,
     return pages;
 }
 
-static SMC_HASH smc_cal_hash(uint8_t *host_addr, uint64_t size)
+static inline SMC_HASH smc_cal_hash(uint8_t *host_addr, uint64_t size)
 {
-    static SMC_HASH hash_val = 0;
-
-    hash_val = jhash2((uint32_t *)host_addr, size / 4, hash_val);
-    return hash_val;
+    return jhash2((uint32_t *)host_addr, size / 4, SMC_JHASH_INIT_VAL);
 }
 
 /**

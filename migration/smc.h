@@ -25,6 +25,7 @@ typedef struct SMCSet {
     int ele_size;   /* sizeof(struct) */
 } SMCSet;
 
+#define SMC_JHASH_INIT_VAL  1824115964UL
 typedef uint32_t    SMC_HASH;
 
 typedef struct SMCFetchPage {

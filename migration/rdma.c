@@ -4068,7 +4068,6 @@ static int smc_rdma_recv_dirty_info(RDMAContext *rdma, SMCInfo *smc_info)
     int pages_to_save;
 
     SMC_LOG(FETCH, "starts");
-    smc_dirty_pages_reset(smc_info);
     do {
         ret = qemu_rdma_exchange_recv(rdma, &head, SMC_RDMA_CONTROL_DIRTY_INFO);
         if (ret < 0) {
@@ -4077,6 +4076,12 @@ static int smc_rdma_recv_dirty_info(RDMAContext *rdma, SMCInfo *smc_info)
         }
         if (total_len == -1) {
             total_len = head.padding;
+            if (total_len == 0) {
+                /* Dirty pages received are empty. Use the old one. */
+                break;
+            } else {
+                smc_dirty_pages_reset(smc_info);
+            }
         }
         pages_to_save = head.len / sizeof(SMCDirtyPage);
         /* TODO: We should translate the byte order before and after network

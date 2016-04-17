@@ -1217,7 +1217,10 @@ static void *mc_thread(void *opaque)
          * from live migration. So we don't need to skip sending dirty pages
          * info in the first chunk.
          */
-        SMC_ASSERT(smc_dirty_pages_count(&glo_smc_info) == mc.total_copies);
+        SMC_LOG(FETCH, "checkpoint #%" PRIu64 ": dirty_pages=%d "
+                "transfered_pages=%" PRIu64, mc.checkpoints,
+                smc_dirty_pages_count(&glo_smc_info), mc.total_copies);
+
         smc_send_dirty_info(f_opaque, &glo_smc_info);
 
         smc_sync_notice_dest_to_recv(f_opaque, &glo_smc_info);

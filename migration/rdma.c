@@ -4169,6 +4169,7 @@ void smc_recv_prefetch_info(void *opaque, SMCInfo *smc_info,
     int pages_to_save;
 
     SMC_LOG(FETCH, "request_prefetch=%d", request_info);
+    smc_prefetch_map_reset(smc_info);
     smc_prefetch_pages_reset(smc_info);
     /* Inform the dest whether we need the prefetched pages info now. */
     ret = qemu_rdma_post_send_control(rdma, NULL, &cmd);
@@ -4226,6 +4227,8 @@ void smc_recv_prefetch_info(void *opaque, SMCInfo *smc_info,
         /* Clean the wr_data[] control message buffer */
         req_data->control_len = 0;
         req_data->control_curr = req_data->control + sizeof(resp);
+
+        smc_prefetch_map_gen_from_pages(smc_info);
     }
 }
 

@@ -310,3 +310,40 @@ bool smc_loadvm_need_check_prefetch(SMCInfo *smc_info)
     }
     return false;
 }
+
+/* Check if a given page is in the prefetched pages and their contents are
+ * identical.
+ */
+bool smc_check_dirty_page(SMCInfo *smc_info, uint64_t block_offset,
+                          uint64_t offset, uint64_t size, SMC_HASH hash_val)
+{
+    SMCFetchPage *page;
+    bool ret = false;
+
+    page = smc_prefetch_map_lookup(smc_info, block_offset + offset);
+    if (page) {
+        SMC_ASSERT((page->block_offset == block_offset) &&
+                   (page->offset == offset) && (page->size == size));
+
+        ret = (page->hash == hash_val);
+
+        SMC_LOG(FETCH, "block_offset=%" PRIu64 " offset=%" PRIu64
+                " fetch_hash=%" PRIu32 " cur_hash=%" PRIu32 " same=%d",
+                block_offset, offset, page->hash, hash_val, ret);
+    }
+    return ret;
+}
+
+void smc_prefetch_map_gen_from_pages(SMCInfo *smc_info)
+{
+    SMCFetchPage *page = (SMCFetchPage *)(smc_info->prefetch_pages.eles);
+    int nb_pages = smc_info->prefetch_pages.nb_eles;
+    int i;
+
+    for (i = 0; i < nb_pages; ++i) {
+        smc_prefetch_map_insert(smc_info, page->block_offset + page->offset,
+                                page);
+        page++;
+    }
+    SMC_LOG(FETCH, "add %d items in prefetch map", nb_pages);
+}

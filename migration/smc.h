@@ -104,9 +104,12 @@ void smc_recover_backup_pages(SMCInfo *smc_info);
 void smc_prefetch_page_cal_hash(SMCInfo *smc_info, int index);
 void smc_rollback_with_prefetch(SMCInfo *smc_info);
 bool smc_loadvm_need_check_prefetch(SMCInfo *smc_info);
+bool smc_check_dirty_page(SMCInfo *smc_info, uint64_t block_offset,
+                          uint64_t offset, uint64_t size, SMC_HASH hash_val);
 
 uint8_t *smc_host_addr_from_offset(void *opaque, uint64_t block_offset,
                                    uint64_t offset);
+void smc_prefetch_map_gen_from_pages(SMCInfo *smc_info);
 
 static inline int smc_dirty_pages_count(SMCInfo *smc_info)
 {
@@ -131,11 +134,6 @@ static inline int smc_prefetch_pages_count(SMCInfo *smc_info)
 static inline SMCFetchPage *smc_prefetch_pages_info(SMCInfo *smc_info)
 {
     return (SMCFetchPage *)(smc_info->prefetch_pages.eles);
-}
-
-static inline SMCBackupPage *smc_backup_pages_info(SMCInfo *smc_info)
-{
-    return (SMCBackupPage *)(smc_info->backup_pages.eles);
 }
 
 static inline void smc_prefetch_map_reset(SMCInfo *smc_info)

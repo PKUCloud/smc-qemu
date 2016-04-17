@@ -41,6 +41,7 @@
 
 #include "smc-debug.h"
 #include "smc.h"
+#include "jhash.h"
 
 #ifdef DEBUG_MIGRATION_RAM
 #define DPRINTF(fmt, ...) \
@@ -926,6 +927,14 @@ static int ram_save_compressed_page(QEMUFile *f, RAMBlock *block,
     return pages;
 }
 
+static SMC_HASH smc_cal_hash(uint8_t *host_addr, uint64_t size)
+{
+    static SMC_HASH hash_val = 0;
+
+    hash_val = jhash2((uint32_t *)host_addr, size / 4, hash_val);
+    return hash_val;
+}
+
 /**
  * ram_find_and_save_block: Finds a dirty page and sends it to f
  *
@@ -987,9 +996,27 @@ static int ram_find_and_save_block(QEMUFile *f, bool last_stage,
             } else {
                 /* Here we can decide if we need to transfer this dirty page */
                 if (smc_is_init(&glo_smc_info)) {
-                    smc_dirty_pages_insert(&glo_smc_info, block->offset, offset,
-                                           TARGET_PAGE_SIZE,
-                                           SMC_DIRTY_FLAGS_IN_CHECKPOINT);
+                    bool is_clean;
+                    SMC_HASH hash_val;
+
+                    hash_val = smc_cal_hash(block->host + offset,
+                                            TARGET_PAGE_SIZE);
+                    is_clean = smc_check_dirty_page(&glo_smc_info,
+                                                    block->offset, offset,
+                                                    TARGET_PAGE_SIZE,
+                                                    hash_val);
+                    if (is_clean) {
+                        /* This page is the same as the prefetched page */
+                        smc_dirty_pages_insert(&glo_smc_info, block->offset,
+                                               offset, TARGET_PAGE_SIZE, 0);
+                        last_seen_block = block;
+                        last_offset = offset;
+                        continue;
+                    } else {
+                        smc_dirty_pages_insert(&glo_smc_info, block->offset,
+                                               offset, TARGET_PAGE_SIZE,
+                                               SMC_DIRTY_FLAGS_IN_CHECKPOINT);
+                    }
                 }
                 pages = ram_save_page(f, block, offset, last_stage,
                                       bytes_transferred);

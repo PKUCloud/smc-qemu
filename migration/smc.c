@@ -113,16 +113,18 @@ void smc_exit(SMCInfo *smc_info)
 }
 
 void smc_dirty_pages_insert(SMCInfo *smc_info, uint64_t block_offset,
-                            uint64_t offset, uint64_t size)
+                            uint64_t offset, uint32_t size, uint32_t flags)
 {
     SMCDirtyPage page = { .block_offset = block_offset,
                           .offset = offset,
                           .size = size,
+                          .flags = flags,
                         };
 
     SMC_ASSERT(smc_info->init);
     SMC_LOG(GEN, "add block_offset=%" PRIu64 " offset=%" PRIu64
-            " size=%" PRIu64, block_offset, offset, size);
+            " size=%" PRIu32 " flags=%" PRIu32, block_offset, offset, size,
+            flags);
     smc_set_insert(&smc_info->dirty_pages, &page);
 }
 
@@ -151,7 +153,7 @@ void smc_prefetch_pages_insert_from_buf(SMCInfo *smc_info, const void *buf,
 
 SMCFetchPage *smc_prefetch_pages_insert(SMCInfo *smc_info,
                                         uint64_t block_offset,
-                                        uint64_t offset, uint64_t size,
+                                        uint64_t offset, uint32_t size,
                                         SMC_HASH hash)
 {
     SMCFetchPage page  = { .block_offset = block_offset,
@@ -163,7 +165,7 @@ SMCFetchPage *smc_prefetch_pages_insert(SMCInfo *smc_info,
 
     SMC_ASSERT(smc_info->init);
     SMC_LOG(GEN, "add block_offset=%" PRIu64 " offset=%" PRIu64
-            " size=%" PRIu64, block_offset, offset, size);
+            " size=%" PRIu32, block_offset, offset, size);
     return (SMCFetchPage *)smc_set_insert(&smc_info->prefetch_pages, &page);
 }
 
@@ -207,6 +209,7 @@ void smc_backup_pages_insert(SMCInfo *smc_info, uint64_t block_offset,
     smc_set_insert(&smc_info->backup_pages, &page);
 }
 
+/* Do not copy page content */
 void *smc_backup_pages_insert_empty(SMCInfo *smc_info, uint64_t block_offset,
                                     uint64_t offset, uint64_t size,
                                     uint8_t *host_addr)

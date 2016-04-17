@@ -5,13 +5,16 @@
 #include "qemu-common.h"
 #include "smc-debug.h"
 
+#define SMC_DIRTY_FLAGS_IN_CHECKPOINT   0x1U
+
 /* Info about a dirty page within a chunk */
 typedef struct SMCDirtyPage {
     /* Offset of the RAMBlock which contains the page */
     uint64_t block_offset;
     /* Offset inside the RAMBlock which contains the page */
     uint64_t offset;
-    uint64_t size;
+    uint32_t size;
+    uint32_t flags;
 } SMCDirtyPage;
 
 /* Maintain an array of a struct */
@@ -27,7 +30,7 @@ typedef uint64_t    SMC_HASH;
 typedef struct SMCFetchPage {
     uint64_t block_offset;
     uint64_t offset;
-    uint64_t size;
+    uint32_t size;
     uint32_t idx;   /* Index in SMCSet */
     SMC_HASH hash;
 } SMCFetchPage;
@@ -70,14 +73,14 @@ extern SMCInfo glo_smc_info;
 void smc_init(SMCInfo *smc_info);
 void smc_exit(SMCInfo *smc_info);
 void smc_dirty_pages_insert(SMCInfo *smc_info, uint64_t block_offset,
-                            uint64_t offset, uint64_t size);
+                            uint64_t offset, uint32_t size, uint32_t flags);
 void smc_dirty_pages_reset(SMCInfo *smc_info);
 void smc_dirty_pages_insert_from_buf(SMCInfo *smc_info, const void *buf,
                                      int nb_pages);
 void smc_prefetch_pages_reset(SMCInfo *smc_info);
 SMCFetchPage *smc_prefetch_pages_insert(SMCInfo *smc_info,
                                         uint64_t block_offset,
-                                        uint64_t offset, uint64_t size,
+                                        uint64_t offset, uint32_t size,
                                         SMC_HASH hash);
 void smc_prefetch_pages_insert_from_buf(SMCInfo *smc_info, const void *buf,
                                         int nb_pages);

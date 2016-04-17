@@ -4519,7 +4519,8 @@ static int smc_do_prefetch_page(RDMAContext *rdma, SMCInfo *smc_info,
     int ret = 0;
 
     SMC_LOG(FETCH, "prefetch page block_offset=%" PRIu64 " offset=%" PRIu64
-            " size=%" PRIu64, page->block_offset, page->offset, page->size);
+            " size=%" PRIu32 " in_checkpoint=%d", page->block_offset,
+            page->offset, page->size, in_checkpoint);
     block = g_hash_table_lookup(rdma->blockmap,
                                 (void *)(uintptr_t)page->block_offset);
     SMC_ASSERT(block);
@@ -4577,7 +4578,9 @@ static int smc_do_prefetch_dirty_pages(RDMAContext *rdma, SMCInfo *smc_info,
                                                dirty_page->block_offset,
                                                dirty_page->offset,
                                                dirty_page->size, 0);
-        ret = smc_do_prefetch_page(rdma, smc_info, fetch_page, true);
+        ret = smc_do_prefetch_page(rdma, smc_info, fetch_page,
+                                   dirty_page->flags &
+                                   SMC_DIRTY_FLAGS_IN_CHECKPOINT);
         if (ret < 0) {
             return ret;
         }

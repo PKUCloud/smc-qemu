@@ -3,6 +3,7 @@
 #include <stdio.h>
 
 #define DEBUG_SMC
+#define STAT_SMC
 
 extern FILE *smc_log_file;
 
@@ -11,8 +12,7 @@ enum {
     SMC_DB_GEN, SMC_DB_INIT, SMC_DB_STREAM, SMC_DB_FETCH,
 };
 #define SMC_DBBIT(x)    (1 << SMC_DB_##x)
-static int smc_dbflags = SMC_DBBIT(GEN) | SMC_DBBIT(INIT) | SMC_DBBIT(STREAM) |
-                         SMC_DBBIT(FETCH);
+static int smc_dbflags = 0;
 
 #define SMC_LOG(what, fmt, ...) do { \
     if (smc_dbflags & SMC_DBBIT(what)) { \
@@ -41,4 +41,12 @@ static int smc_dbflags = SMC_DBBIT(GEN) | SMC_DBBIT(INIT) | SMC_DBBIT(STREAM) |
             ## __VA_ARGS__); \
     } while (0)
 
+#endif
+
+#ifdef STAT_SMC
+#define SMC_STAT(fmt, ...) do { \
+        fprintf(smc_log_file, fmt "\n", ## __VA_ARGS__); \
+        } while (0)
+#else
+#define SMC_STAT(fmt, ...) do {} while (0)
 #endif

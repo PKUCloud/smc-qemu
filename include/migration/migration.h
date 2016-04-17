@@ -87,6 +87,8 @@ struct MigrationState
     int64_t dirty_sync_count;
     int64_t checkpoints;
     int64_t nr_sleeps;
+    int64_t nr_dirty_pages;
+    int64_t nr_trans_pages;
 };
 
 void process_incoming_migration(QEMUFile *f);

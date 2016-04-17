@@ -1221,6 +1221,12 @@ static void *mc_thread(void *opaque)
                 "transfered_pages=%" PRIu64, mc.checkpoints,
                 smc_dirty_pages_count(&glo_smc_info), mc.total_copies);
 
+        SMC_STAT("checkpoint #%" PRIu64 ": dirty_pages %d "
+                "transfered_pages %" PRIu64, mc.checkpoints,
+                smc_dirty_pages_count(&glo_smc_info), mc.total_copies);
+        s->nr_dirty_pages += smc_dirty_pages_count(&glo_smc_info);
+        s->nr_trans_pages += mc.total_copies;
+
         smc_send_dirty_info(f_opaque, &glo_smc_info);
 
         smc_sync_notice_dest_to_recv(f_opaque, &glo_smc_info);
@@ -1898,4 +1904,13 @@ void smc_print_stat(void)
     printf("[SMC]Migration State: %s\n", MigrationStatus_lookup[s->state]);
     printf("[SMC]Num of Checkpoints: %" PRId64 "\n", s->checkpoints);
     printf("[SMC]Num of sleeps in MC: %" PRId64 "\n", s->nr_sleeps);
+    printf("[SMC]Num of dirty pages: %" PRId64 "\n", s->nr_dirty_pages);
+    printf("[SMC]Num of transfered pages: %" PRId64 "\n", s->nr_trans_pages);
+    if (s->nr_dirty_pages) {
+        printf("[SMC]Num of valid prefetched page rate: %lf\n",
+               (s->nr_dirty_pages - s->nr_trans_pages) * 1.0 /
+               s->nr_dirty_pages);
+    }
+
+    fflush(smc_log_file);
 }

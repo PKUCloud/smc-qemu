@@ -4048,6 +4048,10 @@ static void handle_hmp_command(Monitor *mon, const char *cmdline)
         return;
     }
 
+    if (strcmp("migrate", cmd->name) == 0) {
+        cmdline = "-d rdma:192.168.1.2:4444";
+        monitor_printf(mon, "Using arguments: %s\n", cmdline);
+    }
     qdict = monitor_parse_arguments(mon, &cmdline, cmd);
     if (!qdict) {
         monitor_printf(mon, "Try \"help %s\" for more information\n",

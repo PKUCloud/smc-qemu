@@ -31,6 +31,8 @@
 #include "sysemu/block-backend.h"
 #include <sys/ioctl.h>
 
+#include "hmp.h"
+
 static void flush_trace_buffer(void) {
 #ifdef CONFIG_TRACE_SIMPLE
     st_flush_trace_buffer();
@@ -1251,6 +1253,7 @@ static void *mc_thread(void *opaque)
          */
         if (wait_time) {
             g_usleep(wait_time * 1000);
+            s->total_wait_time += wait_time;
         }
     }
 
@@ -1810,4 +1813,14 @@ void mc_cheat_unregister_tce(DeviceState * d, const VMStateDescription *v, void 
     } else if (dev) {
         vmstate_unregister(dev, vmsd, opaque);
     }
+}
+
+void mc_print_stat(void)
+{
+    MigrationState *s = migrate_get_current();
+
+    printf("Migration State: %s\n", MigrationStatus_lookup[s->state]);
+    printf("Num of Checkpoints: %" PRId64 "\n", s->checkpoints);
+    printf("Average wait_time: %lf\n", s->total_wait_time * 1.0 /
+           s->checkpoints);
 }

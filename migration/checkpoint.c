@@ -105,7 +105,7 @@ static void flush_trace_buffer(void) {
 #define MC_SLAB_BUFFER_SIZE     (5UL * 1024UL * 1024UL) /* empirical */
 #define MC_DEV_NAME_MAX_SIZE    256
 
-#define MC_DEFAULT_CHECKPOINT_FREQ_MS 100 /* too slow, but best for now */
+#define MC_DEFAULT_CHECKPOINT_FREQ_MS 40 /* too slow, but best for now */
 #define CALC_MAX_STRIKES()                                           \
     do {  max_strikes = (max_strikes_delay_secs * 1000) / freq_ms; } \
     while (0)
@@ -1904,12 +1904,13 @@ void smc_print_stat(void)
         return;
     }
     printf("[SMC]Migration State: %s\n", MigrationStatus_lookup[s->state]);
+    printf("[SMC]Frequency (ms): %" PRIu64 "\n", freq_ms);
     printf("[SMC]Num of Checkpoints: %" PRId64 "\n", s->checkpoints);
     printf("[SMC]Num of sleeps in MC: %" PRId64 "\n", s->nr_sleeps);
     printf("[SMC]Num of dirty pages: %" PRId64 "\n", s->nr_dirty_pages);
     printf("[SMC]Num of transfered pages: %" PRId64 "\n", s->nr_trans_pages);
     if (s->nr_dirty_pages) {
-        printf("[SMC]Average valid prefetched rate: %lf\n",
+        printf("[SMC]Average valid prefetch rate: %lf\n",
                (s->nr_dirty_pages - s->nr_trans_pages) * 1.0 /
                s->nr_dirty_pages);
     }

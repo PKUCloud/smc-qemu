@@ -1241,7 +1241,7 @@ static void *mc_thread(void *opaque)
         s->bytes_xfer = mc.slab_total;
         s->checkpoints = ++(mc.checkpoints);
 
-        wait_time = (s->downtime <= freq_ms) ? (freq_ms - s->downtime) : 0;
+        wait_time = (s->xmit_time <= freq_ms) ? (freq_ms - s->xmit_time) : 0;
 
         if (current_time >= initial_time + 1000) {
             DPRINTF("bytes %ld xmit_mbps %0.1f xmit_time %" PRId64

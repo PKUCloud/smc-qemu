@@ -1091,8 +1091,7 @@ static void *mc_thread(void *opaque)
         int64_t current_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
         int64_t start_time, xmit_start, end_time;
         bool commit_sent = false;
-        int nb_slab = 0;
-        (void)nb_slab;
+        int nr_dirty_pages;
 
         smc_dirty_pages_reset(&glo_smc_info);
         slab = mc_slab_start(&mc);
@@ -1112,12 +1111,6 @@ static void *mc_thread(void *opaque)
             fprintf(stderr, "transaction start failed\n");
             break;
         }
-
-        DDPRINTF("Sending checkpoint size %" PRId64
-                 " copyset start: %" PRIu64 " nb slab %" PRIu64
-                 " used slabs %" PRIu64 "\n",
-                 mc.slab_total,
-                 mc.start_copyset, mc.nb_slabs, mc.used_slabs);
 
         mc.curr_slab = QTAILQ_FIRST(&mc.slab_head);
 
@@ -1142,10 +1135,6 @@ static void *mc_thread(void *opaque)
         slab = QTAILQ_FIRST(&mc.slab_head);
 
         for (x = 0; x < mc.used_slabs; x++) {
-            DDPRINTF("Attempting write to slab #%d: %p"
-                    " total size: %" PRId64 " / %" PRIu64 "\n",
-                    nb_slab++, slab->buf, slab->size, MC_SLAB_BUFFER_SIZE);
-
             ret = ram_control_save_page(s->file, (uint64_t) (uintptr_t) slab->buf,
                                         NULL, 0, slab->size, NULL);
 
@@ -1204,6 +1193,7 @@ static void *mc_thread(void *opaque)
 
         DDPRINTF("Memory transfer complete.\n");
 
+        nr_dirty_pages = smc_dirty_pages_count(&glo_smc_info);
         /*
          * The MC is safe on the other side now,
          * go along our merry way and release the network
@@ -1219,13 +1209,21 @@ static void *mc_thread(void *opaque)
          */
         SMC_LOG(FETCH, "checkpoint #%" PRIu64 ": dirty_pages=%d "
                 "transfered_pages=%" PRIu64, mc.checkpoints,
-                smc_dirty_pages_count(&glo_smc_info), mc.total_copies);
+                nr_dirty_pages, mc.total_copies);
 
         SMC_STAT("checkpoint #%" PRIu64 ": dirty_pages %d "
                 "transfered_pages %" PRIu64, mc.checkpoints,
-                smc_dirty_pages_count(&glo_smc_info), mc.total_copies);
-        s->nr_dirty_pages += smc_dirty_pages_count(&glo_smc_info);
+                nr_dirty_pages, mc.total_copies);
+
+        s->nr_dirty_pages += nr_dirty_pages;
         s->nr_trans_pages += mc.total_copies;
+
+        if (nr_dirty_pages) {
+            s->fetch_rate_sum += ((nr_dirty_pages - mc.total_copies) * 1.0 /
+                                 nr_dirty_pages);
+        } else {
+            s->fetch_rate_sum += 1;
+        }
 
         smc_send_dirty_info(f_opaque, &glo_smc_info);
 
@@ -1277,6 +1275,7 @@ static void *mc_thread(void *opaque)
         if (wait_time) {
             s->nr_sleeps++;
             g_usleep(wait_time * 1000);
+            s->total_wait_time += wait_time;
         }
 
         /* TODO: Maybe we should decrease the @wait_time to sleep to get time
@@ -1901,15 +1900,24 @@ void smc_print_stat(void)
 {
     MigrationState *s = migrate_get_current();
 
+    if (s->checkpoints == 0) {
+        return;
+    }
     printf("[SMC]Migration State: %s\n", MigrationStatus_lookup[s->state]);
     printf("[SMC]Num of Checkpoints: %" PRId64 "\n", s->checkpoints);
     printf("[SMC]Num of sleeps in MC: %" PRId64 "\n", s->nr_sleeps);
     printf("[SMC]Num of dirty pages: %" PRId64 "\n", s->nr_dirty_pages);
     printf("[SMC]Num of transfered pages: %" PRId64 "\n", s->nr_trans_pages);
     if (s->nr_dirty_pages) {
-        printf("[SMC]Num of valid prefetched page rate: %lf\n",
+        printf("[SMC]Average valid prefetched rate: %lf\n",
                (s->nr_dirty_pages - s->nr_trans_pages) * 1.0 /
                s->nr_dirty_pages);
+    }
+    printf("[SMC]Valid prefetch rate average: %lf\n",
+           s->fetch_rate_sum / s->checkpoints);
+    if (s->checkpoints) {
+        printf("[SMC]Average wait_time: %lf\n", s->total_wait_time * 1.0 /
+               s->checkpoints);
     }
 
     fflush(smc_log_file);

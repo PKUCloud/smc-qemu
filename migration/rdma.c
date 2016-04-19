@@ -4185,7 +4185,7 @@ void smc_recv_prefetch_info(void *opaque, SMCInfo *smc_info,
 
     if (request_info) {
         req_data = &rdma->wr_data[RDMA_WRID_READY];
-        while (true) {
+        while (total_len != 0) {
             /* Block and wait for the prefetched pages info. */
             ret = qemu_rdma_exchange_get_response(rdma, &resp,
                                                   SMC_RDMA_CONTROL_PREFETCH_INFO,
@@ -4217,9 +4217,6 @@ void smc_recv_prefetch_info(void *opaque, SMCInfo *smc_info,
             nb_pages += pages_to_save;
             total_len -= resp.len;
 
-            if (total_len == 0) {
-                break;
-            }
             ret = qemu_rdma_post_send_control(rdma, NULL, &cmd);
             if (ret < 0) {
                 SMC_ERR("qemu_rdma_post_send_control() failed to send the cmd");
@@ -4276,10 +4273,6 @@ static int smc_rdma_send_prefetch_info(RDMAContext *rdma, SMCInfo *smc_info)
         nb_pages -= pages_to_send;
         fetch_pages += pages_to_send;
 
-        if (nb_pages == 0) {
-            break;
-        }
-
         ret = qemu_rdma_exchange_get_response(rdma, &resp,
                                               SMC_RDMA_CONTROL_REQ_PREFETCH_INFO,
                                               RDMA_WRID_READY);
@@ -4293,6 +4286,12 @@ static int smc_rdma_send_prefetch_info(RDMAContext *rdma, SMCInfo *smc_info)
         if (ret) {
             SMC_ERR("qemu_rdma_post_recv_control() failed");
             return ret;
+        }
+        /* Can't put this condition judge in the while(), because if there is
+         * no page to send at first, we still need to tell the src about this.
+         */
+        if (nb_pages == 0) {
+            break;
         }
     }
 

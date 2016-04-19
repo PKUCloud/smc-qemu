@@ -87,11 +87,11 @@ SMCFetchPage *smc_prefetch_pages_insert(SMCInfo *smc_info,
 void smc_prefetch_pages_insert_from_buf(SMCInfo *smc_info, const void *buf,
                                         int nb_pages);
 
-void smc_send_dirty_info(void *opaque, SMCInfo *smc_info);
+int smc_send_dirty_info(void *opaque, SMCInfo *smc_info);
 int smc_recv_dirty_info(void *opaque, SMCInfo *smc_info);
-void smc_recv_prefetch_info(void *opaque, SMCInfo *smc_info,
-                            bool request_info);
-void smc_sync_notice_dest_to_recv(void *opaque, SMCInfo *smc_info);
+int smc_recv_prefetch_info(void *opaque, SMCInfo *smc_info,
+                           bool request_info);
+int smc_sync_notice_dest_to_recv(void *opaque, SMCInfo *smc_info);
 int smc_sync_src_ready_to_recv(void *opaque, SMCInfo *smc_info);
 int smc_prefetch_dirty_pages(void *opaque, SMCInfo *smc_info);
 void smc_backup_pages_insert(SMCInfo *smc_info, uint64_t block_offset,

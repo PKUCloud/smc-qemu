@@ -1227,11 +1227,19 @@ static void *mc_thread(void *opaque)
                 "transfered_pages %" PRIu64 " rate=%lf", mc.checkpoints,
                 nr_dirty_pages, mc.total_copies, tmp);
 
-        smc_send_dirty_info(f_opaque, &glo_smc_info);
+        ret = smc_send_dirty_info(f_opaque, &glo_smc_info);
+        if (ret) {
+            SMC_ERR("smc_send_dirty_info() failed");
+            goto err;
+        }
 
         end_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
 
-        smc_sync_notice_dest_to_recv(f_opaque, &glo_smc_info);
+        ret = smc_sync_notice_dest_to_recv(f_opaque, &glo_smc_info);
+        if (ret) {
+            SMC_ERR("smc_sync_notice_dest_to_recv() failed");
+            goto err;
+        }
 
         s->total_time = end_time - start_time;
         s->xmit_time = end_time - xmit_start;
@@ -1286,7 +1294,11 @@ static void *mc_thread(void *opaque)
          * We should decide if we have time to receive the prefetched pages info
          * or not according to the @wait_time.
          */
-        smc_recv_prefetch_info(f_opaque, &glo_smc_info, true);
+        ret = smc_recv_prefetch_info(f_opaque, &glo_smc_info, true);
+        if (ret < 0) {
+            SMC_ERR("smc_recv_prefetch_info() failed");
+            goto err;
+        }
         current_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
         if (current_time > end_time) {
             fetch_speed = smc_prefetch_pages_count(&glo_smc_info) /

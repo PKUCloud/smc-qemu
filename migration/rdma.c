@@ -4009,8 +4009,10 @@ static void smc_rdma_send_blocks_rkey(RDMAContext *rdma)
  * one RDMA control message. We utilize the RDMAControlHeader.padding to
  * record the total length of all the messages data.
  */
-static void smc_rdma_send_dirty_info(RDMAContext *rdma, SMCInfo *smc_info)
+int smc_send_dirty_info(void *opaque, SMCInfo *smc_info)
 {
+    QEMUFileRDMA *rfile = opaque;
+    RDMAContext *rdma = rfile->rdma;
     RDMAControlHeader head = { .type = SMC_RDMA_CONTROL_DIRTY_INFO,
                                .repeat = 1 };
     int ret;
@@ -4042,24 +4044,19 @@ static void smc_rdma_send_dirty_info(RDMAContext *rdma, SMCInfo *smc_info)
                 NULL, NULL);
         if (ret < 0) {
             SMC_ERR("qemu_rdma_exchange_send() failed to send dirty pages info");
-            return;
+            return ret;
         }
 
         nb_pages -= pages_to_send;
         dirty_pages += pages_to_send;
     } while (nb_pages);
+    return 0;
 }
 
-void smc_send_dirty_info(void *opaque, SMCInfo *smc_info)
+int smc_recv_dirty_info(void *opaque, SMCInfo *smc_info)
 {
     QEMUFileRDMA *rfile = opaque;
     RDMAContext *rdma = rfile->rdma;
-
-    smc_rdma_send_dirty_info(rdma, smc_info);
-}
-
-static int smc_rdma_recv_dirty_info(RDMAContext *rdma, SMCInfo *smc_info)
-{
     RDMAControlHeader head;
     int nb_pages = 0;
     int ret = 0;
@@ -4105,15 +4102,7 @@ static int smc_rdma_recv_dirty_info(RDMAContext *rdma, SMCInfo *smc_info)
     return 0;
 }
 
-int smc_recv_dirty_info(void *opaque, SMCInfo *smc_info)
-{
-    QEMUFileRDMA *rfile = opaque;
-    RDMAContext *rdma = rfile->rdma;
-
-    return smc_rdma_recv_dirty_info(rdma, smc_info);
-}
-
-void smc_sync_notice_dest_to_recv(void *opaque, SMCInfo *smc_info)
+int smc_sync_notice_dest_to_recv(void *opaque, SMCInfo *smc_info)
 {
     QEMUFileRDMA *rfile = opaque;
     RDMAContext *rdma = rfile->rdma;
@@ -4125,9 +4114,10 @@ void smc_sync_notice_dest_to_recv(void *opaque, SMCInfo *smc_info)
     ret = qemu_rdma_exchange_send(rdma, &head, NULL, NULL, NULL, NULL);
     if (ret < 0) {
         SMC_ERR("qemu_rdma_exchange_send() failed to send sync commands");
-        return;
+        return ret;
     }
     SMC_LOG(GEN, "notice dest to be ready to recv");
+    return 0;
 }
 
 int smc_sync_src_ready_to_recv(void *opaque, SMCInfo *smc_info)
@@ -4157,8 +4147,8 @@ int smc_sync_src_ready_to_recv(void *opaque, SMCInfo *smc_info)
     return 0;
 }
 
-void smc_recv_prefetch_info(void *opaque, SMCInfo *smc_info,
-                            bool request_info)
+int smc_recv_prefetch_info(void *opaque, SMCInfo *smc_info,
+                           bool request_info)
 {
     QEMUFileRDMA *rfile = opaque;
     RDMAContext *rdma = rfile->rdma;
@@ -4180,7 +4170,7 @@ void smc_recv_prefetch_info(void *opaque, SMCInfo *smc_info,
     ret = qemu_rdma_post_send_control(rdma, NULL, &cmd);
     if (ret < 0) {
         SMC_ERR("qemu_rdma_post_send_control() failed to send the cmd");
-        return;
+        return ret;
     }
 
     if (request_info) {
@@ -4193,15 +4183,15 @@ void smc_recv_prefetch_info(void *opaque, SMCInfo *smc_info,
             if (ret < 0) {
                 SMC_ERR("qemu_rdma_exchange_get_response() failed to recv "
                         "prefetched pages info");
-                return;
+                return ret;
             }
             qemu_rdma_move_header(rdma, RDMA_WRID_READY, &resp);
 
             /* Post a new RECV work request */
             ret = qemu_rdma_post_recv_control(rdma, RDMA_WRID_READY);
-            if (ret) {
+            if (ret < 0) {
                 SMC_ERR("qemu_rdma_post_recv_control() failed");
-                return;
+                return ret;
             }
 
             /* Handle the prefetched pages info inside the message */
@@ -4220,7 +4210,7 @@ void smc_recv_prefetch_info(void *opaque, SMCInfo *smc_info,
             ret = qemu_rdma_post_send_control(rdma, NULL, &cmd);
             if (ret < 0) {
                 SMC_ERR("qemu_rdma_post_send_control() failed to send the cmd");
-                return;
+                return ret;
             }
         }
         SMC_LOG(GEN, "recv SMC_RDMA_CONTROL_PREFETCH_INFO %d prefetched pages "
@@ -4232,6 +4222,7 @@ void smc_recv_prefetch_info(void *opaque, SMCInfo *smc_info,
 
         smc_prefetch_map_gen_from_pages(smc_info);
     }
+    return 0;
 }
 
 static int smc_rdma_send_prefetch_info(RDMAContext *rdma, SMCInfo *smc_info)

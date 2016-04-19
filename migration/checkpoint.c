@@ -1092,6 +1092,8 @@ static void *mc_thread(void *opaque)
         int64_t start_time, xmit_start, end_time;
         bool commit_sent = false;
         int nr_dirty_pages;
+        double tmp;
+        int fetch_speed;
 
         smc_dirty_pages_reset(&glo_smc_info);
         slab = mc_slab_start(&mc);
@@ -1211,25 +1213,26 @@ static void *mc_thread(void *opaque)
                 "transfered_pages=%" PRIu64, mc.checkpoints,
                 nr_dirty_pages, mc.total_copies);
 
-        SMC_STAT("checkpoint #%" PRIu64 ": dirty_pages %d "
-                "transfered_pages %" PRIu64, mc.checkpoints,
-                nr_dirty_pages, mc.total_copies);
-
         s->nr_dirty_pages += nr_dirty_pages;
         s->nr_trans_pages += mc.total_copies;
 
         if (nr_dirty_pages) {
-            s->fetch_rate_sum += ((nr_dirty_pages - mc.total_copies) * 1.0 /
-                                 nr_dirty_pages);
+            tmp = (nr_dirty_pages - mc.total_copies) * 1.0 / nr_dirty_pages;
         } else {
-            s->fetch_rate_sum += 1;
+            tmp = 1;
         }
+        s->fetch_rate_sum += tmp;
+
+        SMC_STAT("checkpoint #%" PRIu64 ": dirty_pages %d "
+                "transfered_pages %" PRIu64 " rate=%lf", mc.checkpoints,
+                nr_dirty_pages, mc.total_copies, tmp);
 
         smc_send_dirty_info(f_opaque, &glo_smc_info);
 
+        end_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
+
         smc_sync_notice_dest_to_recv(f_opaque, &glo_smc_info);
 
-        end_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
         s->total_time = end_time - start_time;
         s->xmit_time = end_time - xmit_start;
         s->bitmap_time = norm_mig_bitmap_time();
@@ -1284,6 +1287,14 @@ static void *mc_thread(void *opaque)
          * or not according to the @wait_time.
          */
         smc_recv_prefetch_info(f_opaque, &glo_smc_info, true);
+        current_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
+        if (current_time > end_time) {
+            fetch_speed = smc_prefetch_pages_count(&glo_smc_info) /
+                          (current_time - end_time);
+            if (fetch_speed > s->fetch_speed) {
+                s->fetch_speed = fetch_speed;
+            }
+        }
     }
 
     goto out;
@@ -1920,6 +1931,7 @@ void smc_print_stat(void)
         printf("[SMC]Average wait_time: %lf\n", s->total_wait_time * 1.0 /
                s->checkpoints);
     }
+    printf("[SMC]Max prefetch speed (pages/ms): %d\n", s->fetch_speed);
 
     fflush(smc_log_file);
 }

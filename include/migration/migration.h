@@ -90,7 +90,8 @@ struct MigrationState
     int64_t nr_dirty_pages;
     int64_t nr_trans_pages;
     int64_t total_wait_time;
-    double fetch_rate_sum;
+    double fetch_rate_sum;  /* Sum of valid prefetch rate of each round */
+    int fetch_speed;        /* Prefetch speed */
 };
 
 void process_incoming_migration(QEMUFile *f);

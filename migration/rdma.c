@@ -4532,8 +4532,6 @@ static int smc_try_ack_rdma_read(RDMAContext *rdma, SMCInfo *smc_info,
 
     SMC_ASSERT(wr_id_masked == RDMA_WRID_RDMA_READ_REMOTE);
     index = (wr_id & RDMA_WRID_BLOCK_MASK) >> RDMA_WRID_BLOCK_SHIFT;
-    SMC_ASSERT(test_bit(index, smc_info->prefetch_bm));
-    clear_bit(index, smc_info->prefetch_bm);
     *ack_idx = index;
     SMC_LOG(GEN, "prefetch page idx=%" PRIu64 " completed", index);
     return 0;
@@ -4566,9 +4564,6 @@ static int smc_do_prefetch_page(RDMAContext *rdma, SMCInfo *smc_info,
                                 (void *)(uintptr_t)page->block_offset);
     SMC_ASSERT(block);
     host_addr = block->local_host_addr + page->offset;
-    /* The bit will be cleared when the RDMA READ completes */
-    SMC_ASSERT(page->idx < SMC_MAX_PREFETCH_PAGES);
-    set_bit(page->idx, smc_info->prefetch_bm);
     if (in_checkpoint) {
         /* Record it into a hash table so that we can tell if one page is
          * prefetched when we are committing the checkpoint.

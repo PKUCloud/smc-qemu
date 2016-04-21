@@ -8,7 +8,7 @@
 #include "smc-debug.h"
 #include "jhash.h"
 
-#define SMC_SET_INIT_CAP    256
+#define SMC_SET_INIT_CAP    20480
 
 SMCInfo glo_smc_info;
 
@@ -101,8 +101,6 @@ void smc_init(SMCInfo *smc_info, void *opaque)
     smc_set_init(&smc_info->dirty_pages, sizeof(SMCDirtyPage));
     smc_set_init(&smc_info->prefetch_pages, sizeof(SMCFetchPage));
     smc_set_init(&smc_info->backup_pages, sizeof(SMCBackupPage));
-    smc_info->prefetch_bm = bitmap_new(SMC_MAX_PREFETCH_PAGES);
-    bitmap_clear(smc_info->prefetch_bm, 0, SMC_MAX_PREFETCH_PAGES);
     smc_info->prefetch_map = g_hash_table_new(g_direct_hash, g_direct_equal);
     smc_info->opaque = opaque;
     smc_cache_init(&smc_info->cache, SMC_FETCH_CACHE_CAP);
@@ -117,9 +115,7 @@ void smc_exit(SMCInfo *smc_info)
     smc_set_free(&smc_info->prefetch_pages);
     smc_backup_pages_reset(smc_info);
     smc_set_free(&smc_info->backup_pages);
-    g_free(smc_info->prefetch_bm);
     g_hash_table_destroy(smc_info->prefetch_map);
-    smc_info->prefetch_bm = NULL;
     smc_cache_exit(&smc_info->cache);
     smc_info->init = false;
 }

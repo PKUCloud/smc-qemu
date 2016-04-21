@@ -45,8 +45,6 @@ typedef struct SMCBackupPage {
     uint8_t *host_addr;
 } SMCBackupPage;
 
-#define SMC_MAX_PREFETCH_PAGES  20480   /* Max prefetched pages per round */
-
 #define SMC_STATE_RECV_CHECKPOINT       0
 #define SMC_STATE_PREFETCH_START        1
 #define SMC_STATE_PREFETCH_DONE         2
@@ -61,8 +59,6 @@ typedef struct SMCInfo {
     SMCSet prefetch_pages;
     /* Pay attention to maintain the dynamically allocated memory */
     SMCSet backup_pages;
-    /* Prefetch transit bitmap indexed by SMCFetchPage.idx */
-    unsigned long *prefetch_bm;
     /* Used to find whether a given page is a the prefetch list when the dst
      * is committing the checkpoint.
      * [page_physical_addr] -> the pointer of the corresponding SMCFetchPage

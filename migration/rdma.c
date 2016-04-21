@@ -4588,7 +4588,8 @@ static int smc_do_prefetch_page(RDMAContext *rdma, SMCInfo *smc_info,
     return ret;
 }
 
-#define SMC_FETCH_PAGES_PER_ROUND 200
+#define SMC_FETCH_PAGES_PER_ROUND   200
+#define SMC_TARGET_PAGE_SIZE        4096
 
 /* Prefetch as many as possible pages from the src.
  * @complete_pages: num of the actual prefetched pages;
@@ -4602,27 +4603,22 @@ static int smc_do_prefetch_dirty_pages(RDMAContext *rdma, SMCInfo *smc_info,
 {
     int ack_idx;
     int nb_ack = 0;
-    SMCDirtyPage *dirty_page = smc_dirty_pages_info(smc_info);
     SMCFetchPage *fetch_page;
+    SMCCacheEntry *entry;
     int ret;
     int cmd = 0;
-    int nb_pages = smc_dirty_pages_count(smc_info);
     int nb_post = 0;
     int round = 0;
+    uint64_t nr_checkpoints = smc_info->nr_checkpoints;
 
     *complete_pages = 0;
-    if (nb_pages == 0) {
-        return 0;
-    }
-    SMC_LOG(FETCH, "start to fetch %d pages", nb_pages);
-    while (nb_post < nb_pages) {
+    SMC_CACHE_FOREACH(entry, &smc_info->cache) {
         fetch_page = smc_prefetch_pages_insert(smc_info,
-                                               dirty_page->block_offset,
-                                               dirty_page->offset,
-                                               dirty_page->size, 0);
+                                               entry->block_offset,
+                                               entry->offset,
+                                               SMC_TARGET_PAGE_SIZE, 0);
         ret = smc_do_prefetch_page(rdma, smc_info, fetch_page,
-                                   dirty_page->flags &
-                                   SMC_DIRTY_FLAGS_IN_CHECKPOINT);
+                                   entry->in_checkpoint == nr_checkpoints);
         if (ret < 0) {
             return ret;
         }
@@ -4650,10 +4646,8 @@ static int smc_do_prefetch_dirty_pages(RDMAContext *rdma, SMCInfo *smc_info,
                 break;
             }
         }
-        dirty_page++;
     }
 
-    SMC_ASSERT(nb_post == smc_prefetch_pages_count(smc_info));
     while (nb_ack < nb_post) {
         /* Block until any WR is finished */
         ret = smc_try_ack_rdma_read(rdma, smc_info, true, &ack_idx);
@@ -4669,6 +4663,7 @@ static int smc_do_prefetch_dirty_pages(RDMAContext *rdma, SMCInfo *smc_info,
         }
     }
 
+    SMC_LOG(FETCH, "fetched %d pages", nb_post);
     *complete_pages = nb_post;
     return cmd;
 }
@@ -4686,6 +4681,8 @@ int smc_prefetch_dirty_pages(void *opaque, SMCInfo *smc_info)
     smc_prefetch_pages_reset(smc_info);
     smc_backup_pages_reset(smc_info);
     smc_prefetch_map_reset(smc_info);
+
+    smc_update_prefetch_cache(smc_info);
 
     ret = smc_try_recv_prefetch_cmd(rdma, smc_info);
     if (ret < 0) {

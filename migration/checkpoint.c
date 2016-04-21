@@ -1471,12 +1471,12 @@ void mc_process_incoming_checkpoints_if_requested(QEMUFile *f)
                      checkpoint_size, mc.start_copyset, slabs);
             mc.pages_loaded = 0;
 
-            assert(checkpoint_size);
             if (qemu_file_get_error(f) < 0) {
                 SMC_ERR("QEMUFile error while starting transaction, rollback");
                 glo_smc_info.need_rollback = true;
                 goto rollback;
             }
+            assert(checkpoint_size);
             break;
         case MC_TRANSACTION_COMMIT: /* tcp */
             slab = mc_slab_start(&mc);
@@ -1608,6 +1608,7 @@ apply_checkpoint:
 
             DDPRINTF("Transaction complete. TCP pages: %" PRIu64 "\n", mc.pages_loaded);
             mc.checkpoints++;
+            glo_smc_info.nr_checkpoints++;
             if (need_rollback) {
                 goto rollback;
             }

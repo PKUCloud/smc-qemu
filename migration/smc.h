@@ -4,6 +4,7 @@
 #include "qemu/typedefs.h"
 #include "qemu-common.h"
 #include "smc-debug.h"
+#include "smc-cache.h"
 
 #define SMC_DIRTY_FLAGS_IN_CHECKPOINT   0x1U
 
@@ -52,6 +53,8 @@ typedef struct SMCBackupPage {
 #define SMC_STATE_PREFETCH_ABANDON      3
 #define SMC_STATE_TRANSACTION_START     4
 
+#define SMC_FETCH_CACHE_CAP             30000
+
 typedef struct SMCInfo {
     bool init;
     SMCSet dirty_pages;
@@ -68,6 +71,8 @@ typedef struct SMCInfo {
     int state;
     bool need_rollback;
     void *opaque;   /* QEMUFileRDMA */
+    SMCCache cache;
+    uint64_t nr_checkpoints;
 } SMCInfo;
 
 extern SMCInfo glo_smc_info;
@@ -111,6 +116,7 @@ bool smc_check_dirty_page(SMCInfo *smc_info, uint64_t block_offset,
 uint8_t *smc_host_addr_from_offset(void *opaque, uint64_t block_offset,
                                    uint64_t offset);
 void smc_prefetch_map_gen_from_pages(SMCInfo *smc_info);
+void smc_update_prefetch_cache(SMCInfo *smc_info);
 
 static inline int smc_dirty_pages_count(SMCInfo *smc_info)
 {

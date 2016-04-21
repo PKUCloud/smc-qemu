@@ -4677,8 +4677,6 @@ int smc_prefetch_dirty_pages(void *opaque, SMCInfo *smc_info)
     smc_backup_pages_reset(smc_info);
     smc_prefetch_map_reset(smc_info);
 
-    smc_update_prefetch_cache(smc_info);
-
     ret = smc_try_recv_prefetch_cmd(rdma, smc_info);
     if (ret < 0) {
         return ret;

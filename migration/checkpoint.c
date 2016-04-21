@@ -1564,6 +1564,8 @@ void mc_process_incoming_checkpoints_if_requested(QEMUFile *f)
                 goto apply_checkpoint;
             }
 
+            smc_update_prefetch_cache(&glo_smc_info);
+
             if (smc_sync_src_ready_to_recv(f_opaque, &glo_smc_info)) {
                 need_rollback = true;
                 glo_smc_info.need_rollback = true;

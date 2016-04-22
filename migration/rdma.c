@@ -4090,7 +4090,7 @@ int smc_recv_dirty_info(void *opaque, SMCInfo *smc_info)
         total_len -= head.len;
     } while (total_len > 0);
 
-    SMC_LOG(GEN, "recv SMC_RDMA_CONTROL_DIRTY_INFO %d dirty pages info",
+    SMC_LOG(FETCH, "recv SMC_RDMA_CONTROL_DIRTY_INFO %d dirty pages info",
             nb_pages);
 
     /* We need to clean the wr_data[] control message buffer now, since we

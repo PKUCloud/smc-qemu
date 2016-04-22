@@ -1,4 +1,5 @@
 #include "smc-cache.h"
+#include "smc-debug.h"
 
 void smc_cache_init(SMCCache *cache, int capacity)
 {
@@ -43,6 +44,42 @@ static inline void smc_cache_remove(SMCCache *cache, SMCCacheEntry *entry)
     g_hash_table_remove(cache->map, key);
     QTAILQ_REMOVE(&cache->entries, entry, node);
     g_free(entry);
+}
+
+#define QTAILQ_FOREACH_REVERSE_SAVE(var, head, headname, field, next_var)       \
+        for ((var) = (*(((struct headname *)((head)->tqh_last))->tqh_last));    \
+             (var) && \
+             ((next_var) = (*(((struct headname *)((var)->field.tqe_prev))->tqh_last)), 1); \
+             (var) = (next_var))
+
+void smc_cache_zap(SMCCache *cache)
+{
+    SMCCacheEntry *entry = QTAILQ_FIRST(&cache->entries);
+    uint64_t oldest = entry->stamp;
+    SMCCacheEntry *next_entry;
+    struct smc_entries *head = &cache->entries;
+    int nr_zap = 0;
+    GHashTable *map = cache->map;
+    gpointer key;
+
+    if (oldest < SMC_CACHE_MAX_STAMP_DIFF) {
+        return;
+    }
+    oldest -= SMC_CACHE_MAX_STAMP_DIFF;
+    QTAILQ_FOREACH_REVERSE_SAVE(entry, head, smc_entries, node,
+                                next_entry) {
+        if (next_entry->stamp < oldest) {
+            key = (void *)(uintptr_t)(entry->block_offset + entry->offset);
+            g_hash_table_remove(map, key);
+            QTAILQ_REMOVE(head, entry, node);
+            g_free(entry);
+            ++nr_zap;
+        } else {
+            break;
+        }
+    }
+    SMC_LOG(FETCH, "zap %d/%d cache entries", nr_zap, cache->size);
+    cache->size -= nr_zap;
 }
 
 static inline SMCCacheEntry *smc_cache_insert_head(SMCCache *cache,
@@ -108,6 +145,7 @@ void smc_cache_unit_test(void)
     static bool init = false;
     SMCCache smc_cache;
     int cap = 5;
+    SMCCacheEntry *entry, *next_entry;
 
     if (init) {
         return;
@@ -125,5 +163,29 @@ void smc_cache_unit_test(void)
     smc_cache_test_update_and_show(&smc_cache, 0, 5);
     smc_cache_test_update_and_show(&smc_cache, 0, 3);
     smc_cache_test_update_and_show(&smc_cache, 0, 6);
+
+    printf("reverse:");
+    QTAILQ_FOREACH_REVERSE_SAVE(entry, &smc_cache.entries, smc_entries, node,
+                                next_entry) {
+        printf(" %" PRIu64 ",%" PRIu64, entry->block_offset, entry->offset);
+    }
+    printf("\n");
+    printf("reverse:");
+    QTAILQ_FOREACH_REVERSE_SAVE(entry, &smc_cache.entries, smc_entries, node,
+                                next_entry) {
+        printf(" %" PRIu64 ",%" PRIu64, entry->block_offset, entry->offset);
+        if (entry->offset == 3) {
+            QTAILQ_REMOVE(&smc_cache.entries, entry, node);
+            g_free(entry);
+            entry = NULL;
+        }
+    }
+    printf("\n");
+    printf("reverse:");
+    QTAILQ_FOREACH_REVERSE_SAVE(entry, &smc_cache.entries, smc_entries, node,
+                                next_entry) {
+        printf(" %" PRIu64 ",%" PRIu64, entry->block_offset, entry->offset);
+    }
+    printf("\n");
     smc_cache_exit(&smc_cache);
 }

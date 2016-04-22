@@ -1,10 +1,11 @@
 #include "smc-cache.h"
 #include "smc-debug.h"
 
-void smc_cache_init(SMCCache *cache, int capacity)
+void smc_cache_init(SMCCache *cache, int capacity, int soft_capacity)
 {
     memset(cache, 0, sizeof(*cache));
     cache->capacity = capacity;
+    cache->soft_capacity = soft_capacity;
     QTAILQ_INIT(&cache->entries);
     cache->map = g_hash_table_new(g_direct_hash, g_direct_equal);
 }
@@ -153,7 +154,7 @@ void smc_cache_unit_test(void)
         init = true;
     }
     printf("Unit test for SMCCache\n");
-    smc_cache_init(&smc_cache, cap);
+    smc_cache_init(&smc_cache, cap, cap);
     smc_cache_test_update_and_show(&smc_cache, 0, 1);
     smc_cache_test_update_and_show(&smc_cache, 0, 2);
     smc_cache_test_update_and_show(&smc_cache, 0, 3);

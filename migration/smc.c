@@ -103,7 +103,8 @@ void smc_init(SMCInfo *smc_info, void *opaque)
     smc_set_init(&smc_info->backup_pages, sizeof(SMCBackupPage));
     smc_info->prefetch_map = g_hash_table_new(g_direct_hash, g_direct_equal);
     smc_info->opaque = opaque;
-    smc_cache_init(&smc_info->cache, SMC_FETCH_CACHE_CAP);
+    smc_cache_init(&smc_info->cache, SMC_FETCH_CACHE_CAP,
+                   SMC_FETCH_CACHE_SOFT_CAP);
     smc_info->init = true;
 }
 

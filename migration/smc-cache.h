@@ -18,12 +18,13 @@ typedef struct SMCCacheEntry {
 
 typedef struct SMCCache {
     int capacity;
+    int soft_capacity;
     int size;
     GHashTable *map;
     QTAILQ_HEAD(smc_entries, SMCCacheEntry) entries;
 } SMCCache;
 
-void smc_cache_init(SMCCache *cache, int capacity);
+void smc_cache_init(SMCCache *cache, int capacity, int soft_capacity);
 void smc_cache_exit(SMCCache *cache);
 void smc_cache_update(SMCCache *cache, uint64_t block_offset, uint64_t offset,
                       uint64_t stamp, uint64_t in_checkpoint);
@@ -37,7 +38,7 @@ static inline int smc_cache_size(SMCCache *cache)
 
 static inline bool smc_cache_need_zap(SMCCache *cache)
 {
-    return cache->size == cache->capacity;
+    return cache->size >= cache->soft_capacity;
 }
 
 #define SMC_CACHE_FOREACH(entry, smc_cache) \

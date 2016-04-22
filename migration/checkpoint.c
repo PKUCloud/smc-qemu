@@ -1195,7 +1195,6 @@ static void *mc_thread(void *opaque)
 
         DDPRINTF("Memory transfer complete.\n");
 
-        nr_dirty_pages = smc_dirty_pages_count(&glo_smc_info);
         /*
          * The MC is safe on the other side now,
          * go along our merry way and release the network
@@ -1203,12 +1202,9 @@ static void *mc_thread(void *opaque)
          */
         mc_flush_oldest_buffer();
 
-        /* Send the dirty pages info of this chunk and then reset the dirty
-         * pages set.
-         * We won't treat all pages dirty in the first chunk because we continue
-         * from live migration. So we don't need to skip sending dirty pages
-         * info in the first chunk.
-         */
+        end_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
+
+        nr_dirty_pages = smc_dirty_pages_count(&glo_smc_info);
         SMC_LOG(FETCH, "checkpoint #%" PRIu64 ": dirty_pages=%d "
                 "transfered_pages=%" PRIu64, mc.checkpoints,
                 nr_dirty_pages, mc.total_copies);
@@ -1232,8 +1228,6 @@ static void *mc_thread(void *opaque)
             SMC_ERR("smc_send_dirty_info() failed");
             goto err;
         }
-
-        end_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
 
         ret = smc_sync_notice_dest_to_recv(f_opaque, &glo_smc_info);
         if (ret) {

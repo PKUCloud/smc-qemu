@@ -8,7 +8,7 @@
 #include "smc-debug.h"
 #include "jhash.h"
 
-#define SMC_SET_INIT_CAP    20480
+#define SMC_SET_INIT_CAP    409600
 
 SMCInfo glo_smc_info;
 
@@ -344,7 +344,7 @@ void smc_prefetch_map_gen_from_pages(SMCInfo *smc_info)
     SMC_LOG(FETCH, "add %d items in prefetch map", nb_pages);
 }
 
-#define SMC_NUM_PRESERVE_PREFETCH_HIT   500
+#define SMC_NUM_PRESERVE_PREFETCH_HIT   1000
 #define SMC_TARGET_PAGE_SIZE            4096
 #define SMC_NUM_DIRTY_PAGES_PREFETCH    20000
 

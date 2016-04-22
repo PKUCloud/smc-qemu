@@ -83,26 +83,33 @@ void smc_cache_zap(SMCCache *cache)
     cache->size -= nr_zap;
 }
 
-static inline SMCCacheEntry *smc_cache_insert_head(SMCCache *cache,
-                                                   SMCCacheEntry *new_entry)
+static inline SMCCacheEntry *smc_cache_insert(SMCCache *cache,
+                                              SMCCacheEntry *new_entry)
 {
     SMCCacheEntry *entry;
-    gpointer key = (void *)(uintptr_t)(new_entry->block_offset +
-                                       new_entry->offset);
+    gpointer key;
 
-    if (cache->size == cache->capacity) {
-        smc_cache_remove(cache, QTAILQ_LAST(&cache->entries, smc_entries));
-        cache->size--;
+    if (cache->size < cache->capacity) {
+        entry = g_malloc(sizeof(*entry));
+        QTAILQ_INSERT_HEAD(&cache->entries, entry, node);
+        cache->size++;
+    } else {
+        /* Reuse the last entry and move it to the head */
+        entry = QTAILQ_LAST(&cache->entries, smc_entries);
+        key = (void *)(uintptr_t)(entry->block_offset + entry->offset);
+        QTAILQ_REMOVE(&cache->entries, entry, node);
+        QTAILQ_INSERT_HEAD(&cache->entries, entry, node);
+        g_hash_table_remove(cache->map, key);
     }
 
-    entry = g_malloc(sizeof(*entry));
+    /* Update content */
     entry->block_offset = new_entry->block_offset;
     entry->offset = new_entry->offset;
     entry->stamp = new_entry->stamp;
     entry->in_checkpoint = new_entry->in_checkpoint;
-    QTAILQ_INSERT_HEAD(&cache->entries, entry, node);
+    key = (void *)(uintptr_t)(entry->block_offset + entry->offset);
     g_hash_table_insert(cache->map, key, entry);
-    cache->size++;
+
     return entry;
 }
 
@@ -123,7 +130,7 @@ void smc_cache_update(SMCCache *cache, uint64_t block_offset, uint64_t offset,
         entry->stamp = stamp;
         entry->in_checkpoint = in_checkpoint;
     } else {
-        smc_cache_insert_head(cache, &new_entry);
+        smc_cache_insert(cache, &new_entry);
     }
 }
 

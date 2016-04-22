@@ -365,10 +365,6 @@ void smc_update_prefetch_cache(SMCInfo *smc_info)
     uint64_t nr_checkpoints = smc_info->nr_checkpoints;
     SMC_LOG(FETCH, "update SMCCache according to %d dirty_pages", nr_pages);
 
-    if (smc_cache_need_zap(cache)) {
-        smc_cache_zap(cache);
-    }
-
     for (i = 0, nr_hits = 0; i < nr_pages; ++i) {
         SMC_ASSERT(dirty_page->size == SMC_TARGET_PAGE_SIZE);
         if (dirty_page->flags & SMC_DIRTY_FLAGS_IN_CHECKPOINT) {

@@ -51,8 +51,8 @@ typedef struct SMCBackupPage {
 #define SMC_STATE_PREFETCH_ABANDON      3
 #define SMC_STATE_TRANSACTION_START     4
 
-#define SMC_FETCH_CACHE_CAP             100000
-#define SMC_FETCH_CACHE_SOFT_CAP        10000
+#define SMC_FETCH_CACHE_CAP             3000
+#define SMC_FETCH_CACHE_SOFT_CAP        3000
 
 typedef struct SMCInfo {
     bool init;

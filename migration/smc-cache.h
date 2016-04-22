@@ -22,6 +22,7 @@ typedef struct SMCCache {
     int size;
     GHashTable *map;
     QTAILQ_HEAD(smc_entries, SMCCacheEntry) entries;
+    struct smc_entries empty_list;
 } SMCCache;
 
 void smc_cache_init(SMCCache *cache, int capacity, int soft_capacity);

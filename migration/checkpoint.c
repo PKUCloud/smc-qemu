@@ -41,7 +41,7 @@ static void flush_trace_buffer(void) {
 #endif
 }
 
-#define DEBUG_MC
+//#define DEBUG_MC
 //#define DEBUG_MC_VERBOSE
 //#define DEBUG_MC_REALLY_VERBOSE
 
@@ -1088,7 +1088,6 @@ static void *mc_thread(void *opaque)
     }
 
     while (s->state == MIGRATION_STATUS_CHECKPOINTING) {
-        int64_t current_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
         int64_t start_time, xmit_start, end_time;
         bool commit_sent = false;
         int nr_dirty_pages;
@@ -1195,6 +1194,12 @@ static void *mc_thread(void *opaque)
 
         DDPRINTF("Memory transfer complete.\n");
 
+        ret = smc_send_dirty_info(f_opaque, &glo_smc_info);
+        if (ret) {
+            SMC_ERR("smc_send_dirty_info() failed");
+            goto err;
+        }
+
         /*
          * The MC is safe on the other side now,
          * go along our merry way and release the network
@@ -1205,9 +1210,6 @@ static void *mc_thread(void *opaque)
         end_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
 
         nr_dirty_pages = smc_dirty_pages_count(&glo_smc_info);
-        SMC_LOG(FETCH, "checkpoint #%" PRIu64 ": dirty_pages=%d "
-                "transfered_pages=%" PRIu64, mc.checkpoints,
-                nr_dirty_pages, mc.total_copies);
 
         s->nr_dirty_pages += nr_dirty_pages;
         s->nr_trans_pages += mc.total_copies;
@@ -1223,12 +1225,6 @@ static void *mc_thread(void *opaque)
                 "transfered_pages %" PRIu64 " rate=%lf", mc.checkpoints,
                 nr_dirty_pages, mc.total_copies, tmp);
 
-        ret = smc_send_dirty_info(f_opaque, &glo_smc_info);
-        if (ret) {
-            SMC_ERR("smc_send_dirty_info() failed");
-            goto err;
-        }
-
         ret = smc_sync_notice_dest_to_recv(f_opaque, &glo_smc_info);
         if (ret) {
             SMC_ERR("smc_sync_notice_dest_to_recv() failed");
@@ -1237,32 +1233,18 @@ static void *mc_thread(void *opaque)
 
         s->total_time = end_time - start_time;
         s->xmit_time = end_time - xmit_start;
+        /*
         s->bitmap_time = norm_mig_bitmap_time();
         s->log_dirty_time = norm_mig_log_dirty_time();
         s->mbps = MBPS(mc.slab_total, s->xmit_time);
         s->copy_mbps = MBPS(mc.slab_total, s->ram_copy_time);
+        */
         s->bytes_xfer = mc.slab_total;
         s->checkpoints = ++(mc.checkpoints);
 
         wait_time = (s->xmit_time <= freq_ms) ? (freq_ms - s->xmit_time) : 0;
-
-        if (current_time >= initial_time + 1000) {
-            DPRINTF("bytes %ld xmit_mbps %0.1f xmit_time %" PRId64
-                    " downtime %" PRIu64 " sync_time %" PRId64
-                    " logdirty_time %" PRId64 " ram_copy_time %" PRId64
-                    " copy_mbps %0.1f wait time %" PRIu64
-                    " checkpoints %" PRId64 "\n",
-                    s->bytes_xfer,
-                    s->mbps,
-                    s->xmit_time,
-                    s->downtime,
-                    s->bitmap_time,
-                    s->log_dirty_time,
-                    s->ram_copy_time,
-                    s->copy_mbps,
-                    wait_time,
-                    s->checkpoints);
-            initial_time = current_time;
+        if (wait_time >= SMC_PREFETCH_RECV_TIME) {
+            wait_time -= SMC_PREFETCH_RECV_TIME;
         }
 
         flush_trace_buffer();
@@ -1293,13 +1275,22 @@ static void *mc_thread(void *opaque)
             SMC_ERR("smc_recv_prefetch_info() failed");
             goto err;
         }
-        current_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
-        if (current_time > end_time) {
+        start_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
+        if (start_time > end_time) {
             fetch_speed = smc_prefetch_pages_count(&glo_smc_info) /
-                          (current_time - end_time);
+                          (start_time - end_time);
             if (fetch_speed > s->fetch_speed) {
                 s->fetch_speed = fetch_speed;
             }
+        }
+
+        if (end_time >= initial_time + 1000) {
+            printf("[SMC]bytes %ld xmit_time %" PRId64 " downtime %" PRIu64
+                   " ram_copy_time %" PRId64 " wait_time %" PRIu64
+                   " fetch_speed %d checkpoints %" PRId64 "\n",
+                   s->bytes_xfer, s->xmit_time, s->downtime, s->ram_copy_time,
+                   wait_time, fetch_speed, s->checkpoints);
+            initial_time = end_time;
         }
     }
 

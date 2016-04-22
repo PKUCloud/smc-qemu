@@ -8,6 +8,8 @@
 
 #define SMC_DIRTY_FLAGS_IN_CHECKPOINT   0x1U
 
+#define SMC_PREFETCH_RECV_TIME          2
+
 /* Info about a dirty page within a chunk */
 typedef struct SMCDirtyPage {
     /* Offset of the RAMBlock which contains the page */

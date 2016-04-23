@@ -1026,6 +1026,7 @@ static void *mc_thread(void *opaque)
     uint64_t wait_time = 0;
     Error *local_err = NULL;
     bool blk_enabled = false;
+    int64_t fetch_time;
 
     smc_init(&glo_smc_info, f_opaque);
 
@@ -1277,19 +1278,22 @@ static void *mc_thread(void *opaque)
         }
         start_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
         if (start_time > end_time) {
-            fetch_speed = smc_prefetch_pages_count(&glo_smc_info) /
-                          (start_time - end_time);
+            fetch_time = start_time - end_time;
+            fetch_speed = smc_prefetch_pages_count(&glo_smc_info) / fetch_time;
             if (fetch_speed > s->fetch_speed) {
                 s->fetch_speed = fetch_speed;
             }
+        } else {
+            fetch_time = 0;
         }
 
         if (end_time >= initial_time + 1000) {
             printf("[SMC]bytes %ld xmit_time %" PRId64 " downtime %" PRIu64
                    " ram_copy_time %" PRId64 " wait_time %" PRIu64
-                   " fetch_speed %d checkpoints %" PRId64 "\n",
+                   " fetch_speed %d fetch_time %" PRId64
+                   " checkpoints %" PRId64 "\n",
                    s->bytes_xfer, s->xmit_time, s->downtime, s->ram_copy_time,
-                   wait_time, fetch_speed, s->checkpoints);
+                   wait_time, fetch_speed, fetch_time, s->checkpoints);
             initial_time = end_time;
         }
     }

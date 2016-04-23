@@ -1,7 +1,7 @@
 #include "smc-cache.h"
 #include "smc-debug.h"
 
-static const int SMC_CACHE_CAPS[] = {30000, 2000, 2000};
+static const int SMC_CACHE_CAPS[] = {30000, 2000, 1000};
 
 #define SMC_CACHE_SOFT_CAP      30000
 

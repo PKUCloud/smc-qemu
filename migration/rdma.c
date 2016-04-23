@@ -4585,6 +4585,8 @@ static int smc_do_prefetch_page(RDMAContext *rdma, SMCInfo *smc_info,
 
 #define SMC_FETCH_PAGES_PER_ROUND   200
 #define SMC_TARGET_PAGE_SIZE        4096
+/* 70 pages/ms */
+#define SMC_FETCH_PAGES_MIN_NUM     500
 
 /* Prefetch as many as possible pages from the src.
  * @complete_pages: num of the actual prefetched pages;
@@ -4604,7 +4606,6 @@ static int smc_do_prefetch_dirty_pages(RDMAContext *rdma, SMCInfo *smc_info,
     int ret;
     int cmd = 0;
     int nb_post = 0;
-    int round = 0;
     uint64_t nr_checkpoints = smc_info->nr_checkpoints;
     bool finished = false;
 
@@ -4638,12 +4639,9 @@ static int smc_do_prefetch_dirty_pages(RDMAContext *rdma, SMCInfo *smc_info,
                 ++nb_ack;
             }
 
-            if (++round == SMC_FETCH_PAGES_PER_ROUND) {
-                round = 0;
-                if (cmd) {
-                    finished = true;
-                    break;
-                }
+            if ((nb_post >= SMC_FETCH_PAGES_MIN_NUM) && cmd) {
+                finished = true;
+                break;
             }
         }
         if (finished) {

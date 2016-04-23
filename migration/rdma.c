@@ -4600,46 +4600,54 @@ static int smc_do_prefetch_dirty_pages(RDMAContext *rdma, SMCInfo *smc_info,
     int nb_ack = 0;
     SMCFetchPage *fetch_page;
     SMCCacheEntry *entry;
+    SMCCacheLevel *level;
     int ret;
     int cmd = 0;
     int nb_post = 0;
     int round = 0;
     uint64_t nr_checkpoints = smc_info->nr_checkpoints;
+    bool finished = false;
 
     *complete_pages = 0;
-    SMC_CACHE_FOREACH(entry, &smc_info->cache) {
-        fetch_page = smc_prefetch_pages_insert(smc_info,
-                                               entry->block_offset,
-                                               entry->offset,
-                                               SMC_TARGET_PAGE_SIZE, 0);
-        ret = smc_do_prefetch_page(rdma, smc_info, fetch_page,
-                                   entry->in_checkpoint == nr_checkpoints);
-        if (ret < 0) {
-            return ret;
-        }
-
-        ++nb_post;
-
-        /* We see if there are any RDMA READ have completed and calculate their
-         * hash concurrently.
-         */
-        ret = smc_try_ack_rdma_read(rdma, smc_info, false, &ack_idx);
-        if (ret < 0) {
-            return ret;
-        } else if (ret > 0) {
-            /* We have recv the prefetch cmd, ret is the cmd type */
-            SMC_ASSERT(cmd == 0);
-            cmd = ret;
-        } else if (ack_idx != -1) {
-            smc_prefetch_page_cal_hash(smc_info, ack_idx);
-            ++nb_ack;
-        }
-
-        if (++round == SMC_FETCH_PAGES_PER_ROUND) {
-            round = 0;
-            if (cmd) {
-                break;
+    SMC_CACHE_FOREACH_LEVEL(level, &smc_info->cache) {
+        SMC_CACHE_FOREACH_ENTRY(entry, level) {
+            fetch_page = smc_prefetch_pages_insert(smc_info,
+                                                   entry->block_offset,
+                                                   entry->offset,
+                                                   SMC_TARGET_PAGE_SIZE, 0);
+            ret = smc_do_prefetch_page(rdma, smc_info, fetch_page,
+                                       entry->in_checkpoint == nr_checkpoints);
+            if (ret < 0) {
+                return ret;
             }
+
+            ++nb_post;
+
+            /* We see if there are any RDMA READ have completed and calculate their
+             * hash concurrently.
+             */
+            ret = smc_try_ack_rdma_read(rdma, smc_info, false, &ack_idx);
+            if (ret < 0) {
+                return ret;
+            } else if (ret > 0) {
+                /* We have recv the prefetch cmd, ret is the cmd type */
+                SMC_ASSERT(cmd == 0);
+                cmd = ret;
+            } else if (ack_idx != -1) {
+                smc_prefetch_page_cal_hash(smc_info, ack_idx);
+                ++nb_ack;
+            }
+
+            if (++round == SMC_FETCH_PAGES_PER_ROUND) {
+                round = 0;
+                if (cmd) {
+                    finished = true;
+                    break;
+                }
+            }
+        }
+        if (finished) {
+            break;
         }
     }
 
@@ -4658,7 +4666,7 @@ static int smc_do_prefetch_dirty_pages(RDMAContext *rdma, SMCInfo *smc_info,
         }
     }
 
-    SMC_LOG(FETCH, "fetched %d pages", nb_post);
+    SMC_STAT("fetched %d pages", nb_post);
     *complete_pages = nb_post;
     return cmd;
 }

@@ -103,8 +103,7 @@ void smc_init(SMCInfo *smc_info, void *opaque)
     smc_set_init(&smc_info->backup_pages, sizeof(SMCBackupPage));
     smc_info->prefetch_map = g_hash_table_new(g_direct_hash, g_direct_equal);
     smc_info->opaque = opaque;
-    smc_cache_init(&smc_info->cache, SMC_FETCH_CACHE_CAP,
-                   SMC_FETCH_CACHE_SOFT_CAP);
+    smc_cache_init(&smc_info->cache);
     smc_info->init = true;
 }
 
@@ -294,6 +293,8 @@ void smc_rollback_with_prefetch(SMCInfo *smc_info)
     smc_prefetch_pages_reset(smc_info);
     smc_backup_pages_reset(smc_info);
     smc_prefetch_map_reset(smc_info);
+
+    smc_cache_stat(&smc_info->cache);
 }
 
 bool smc_loadvm_need_check_prefetch(SMCInfo *smc_info)
@@ -345,7 +346,6 @@ void smc_prefetch_map_gen_from_pages(SMCInfo *smc_info)
     SMC_LOG(FETCH, "add %d items in prefetch map", nb_pages);
 }
 
-#define SMC_NUM_PRESERVE_PREFETCH_HIT   1000
 #define SMC_TARGET_PAGE_SIZE            4096
 #define SMC_NUM_DIRTY_PAGES_PREFETCH    20000
 
@@ -360,40 +360,21 @@ void smc_update_prefetch_cache(SMCInfo *smc_info)
     SMCDirtyPage *dirty_page = smc_dirty_pages_info(smc_info);
     int nr_pages = min(smc_dirty_pages_count(smc_info),
                        SMC_NUM_DIRTY_PAGES_PREFETCH);
-    SMCItem hits[SMC_NUM_PRESERVE_PREFETCH_HIT];
-    int i, nr_hits;
+    int i;
     uint64_t nr_checkpoints = smc_info->nr_checkpoints;
-    SMC_LOG(FETCH, "update SMCCache according to %d dirty_pages", nr_pages);
+    uint64_t in_checkpoint;
 
-    for (i = 0, nr_hits = 0; i < nr_pages; ++i) {
+    SMC_LOG(FETCH, "update SMCCache according to %d dirty_pages", nr_pages);
+    for (i = 0; i < nr_pages; ++i) {
         SMC_ASSERT(dirty_page->size == SMC_TARGET_PAGE_SIZE);
         if (dirty_page->flags & SMC_DIRTY_FLAGS_IN_CHECKPOINT) {
             /* This page is in checkpoint */
-            smc_cache_update(cache, dirty_page->block_offset,
-                             dirty_page->offset, nr_checkpoints,
-                             nr_checkpoints);
+            in_checkpoint = nr_checkpoints;
         } else {
-            /* Valid prefetch in previous checkpoint */
-            if (nr_hits < SMC_NUM_PRESERVE_PREFETCH_HIT) {
-                hits[nr_hits].block_offset = dirty_page->block_offset;
-                hits[nr_hits].offset = dirty_page->offset;
-                ++nr_hits;
-            } else {
-                smc_cache_update(cache, dirty_page->block_offset,
-                                 dirty_page->offset,
-                                 nr_checkpoints, 0);
-            }
+            in_checkpoint = 0;
         }
+        smc_cache_update(cache, dirty_page->block_offset, dirty_page->offset,
+                         nr_checkpoints, in_checkpoint);
         ++dirty_page;
     }
-
-    /* We put valid prefetched pages in front of the cache in order to fetch
-     * them first.
-     */
-    for (i = 0; i < nr_hits; ++i) {
-        smc_cache_update(cache, hits[i].block_offset, hits[i].offset,
-                         nr_checkpoints, 0);
-    }
-    SMC_LOG(FETCH, "%d/%d valid prefetch pages in cache", nr_hits,
-            smc_cache_size(cache));
 }

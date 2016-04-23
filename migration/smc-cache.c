@@ -1,26 +1,43 @@
 #include "smc-cache.h"
 #include "smc-debug.h"
 
+static const int SMC_CACHE_CAPS[] = {30000, 2000, 2000};
+
+#define SMC_CACHE_SOFT_CAP      30000
+
 static void smc_cache_pre_alloc(SMCCache *cache)
 {
-    int cap = cache->capacity;
+    int cap = 0;
     int i;
     SMCCacheEntry *entry;
 
+    for (i = 0; i < SMC_CACHE_MAX_PRI_LEVEL; ++i) {
+        cap += cache->levels[i].capacity;
+    }
+    /* Alloc one more entry in the case that all levels are full and we now
+     * want to insert a new entry.
+     */
+    cap++;
     for (i = 0; i < cap; ++i) {
         entry = g_malloc(sizeof(*entry));
         QTAILQ_INSERT_HEAD(&cache->empty_list, entry, node);
     }
-
-    SMC_LOG(FETCH, "alloc %d entries", cap);
 }
 
-void smc_cache_init(SMCCache *cache, int capacity, int soft_capacity)
+void smc_cache_init(SMCCache *cache)
 {
+    int i;
+    SMCCacheLevel *level;
+
     memset(cache, 0, sizeof(*cache));
-    cache->capacity = capacity;
-    cache->soft_capacity = soft_capacity;
-    QTAILQ_INIT(&cache->entries);
+
+    for (i = 0; i < SMC_CACHE_MAX_PRI_LEVEL; ++i) {
+        level = &(cache->levels[i]);
+        level->size = 0;
+        level->capacity = SMC_CACHE_CAPS[i];
+        QTAILQ_INIT(&level->entries);
+    }
+    cache->soft_capacity = SMC_CACHE_SOFT_CAP;
     QTAILQ_INIT(&cache->empty_list);
     cache->map = g_hash_table_new(g_direct_hash, g_direct_equal);
 
@@ -30,20 +47,25 @@ void smc_cache_init(SMCCache *cache, int capacity, int soft_capacity)
 void smc_cache_exit(SMCCache *cache)
 {
     SMCCacheEntry *entry, *next;
+    int i;
+    struct smc_entries *head;
 
     g_hash_table_destroy(cache->map);
     cache->map = NULL;
 
-    QTAILQ_FOREACH_SAFE(entry, &cache->entries, node, next) {
-        QTAILQ_REMOVE(&cache->entries, entry, node);
-        g_free(entry);
+    for (i = 0; i < SMC_CACHE_MAX_PRI_LEVEL; ++i) {
+        head = &(cache->levels[i].entries);
+        QTAILQ_FOREACH_SAFE(entry, head, node, next) {
+            QTAILQ_REMOVE(head, entry, node);
+            g_free(entry);
+        }
+        cache->levels[i].size = 0;
     }
 
     QTAILQ_FOREACH_SAFE(entry, &cache->empty_list, node, next) {
         QTAILQ_REMOVE(&cache->empty_list, entry, node);
         g_free(entry);
     }
-    cache->size = 0;
 }
 
 static inline SMCCacheEntry *smc_malloc_entry(SMCCache *cache)
@@ -61,26 +83,12 @@ static inline void smc_free_entry(SMCCache *cache, SMCCacheEntry *entry)
     QTAILQ_INSERT_HEAD(&cache->empty_list, entry, node);
 }
 
-static inline SMCCacheEntry *smc_cache_find(SMCCache *cache, uint64_t block_offset,
+static inline SMCCacheEntry *smc_cache_find(SMCCache *cache,
+                                            uint64_t block_offset,
                                             uint64_t offset)
 {
     return g_hash_table_lookup(cache->map,
                                (void *)(uintptr_t)(block_offset + offset));
-}
-
-static inline void smc_cache_move_head(SMCCache *cache, SMCCacheEntry *entry)
-{
-    QTAILQ_REMOVE(&cache->entries, entry, node);
-    QTAILQ_INSERT_HEAD(&cache->entries, entry, node);
-}
-
-static inline void smc_cache_remove(SMCCache *cache, SMCCacheEntry *entry)
-{
-    gpointer key = (void *)(uintptr_t)(entry->block_offset + entry->offset);
-
-    g_hash_table_remove(cache->map, key);
-    QTAILQ_REMOVE(&cache->entries, entry, node);
-    smc_free_entry(cache, entry);
 }
 
 #define QTAILQ_FOREACH_REVERSE_SAVE(var, head, headname, field, next_var)       \
@@ -91,10 +99,10 @@ static inline void smc_cache_remove(SMCCache *cache, SMCCacheEntry *entry)
 
 void smc_cache_zap(SMCCache *cache)
 {
-    SMCCacheEntry *entry = QTAILQ_FIRST(&cache->entries);
+    struct smc_entries *head = &(cache->levels[0].entries);
+    SMCCacheEntry *entry = QTAILQ_FIRST(head);
     uint64_t oldest = entry->stamp;
     SMCCacheEntry *next_entry;
-    struct smc_entries *head = &cache->entries;
     int nr_zap = 0;
     GHashTable *map = cache->map;
     gpointer key;
@@ -103,9 +111,8 @@ void smc_cache_zap(SMCCache *cache)
         return;
     }
     oldest -= SMC_CACHE_MAX_STAMP_DIFF;
-    QTAILQ_FOREACH_REVERSE_SAVE(entry, head, smc_entries, node,
-                                next_entry) {
-        if (next_entry->stamp < oldest) {
+    QTAILQ_FOREACH_REVERSE_SAVE(entry, head, smc_entries, node, next_entry) {
+        if (entry->stamp < oldest) {
             key = (void *)(uintptr_t)(entry->block_offset + entry->offset);
             g_hash_table_remove(map, key);
             QTAILQ_REMOVE(head, entry, node);
@@ -115,81 +122,120 @@ void smc_cache_zap(SMCCache *cache)
             break;
         }
     }
-    SMC_LOG(FETCH, "zap %d/%d cache entries", nr_zap, cache->size);
-    cache->size -= nr_zap;
+    SMC_LOG(FETCH, "zap %d/%d cache entries", nr_zap, cache->levels[0].size);
+    cache->levels[0].size -= nr_zap;
 }
 
-static inline SMCCacheEntry *smc_cache_insert(SMCCache *cache,
-                                              SMCCacheEntry *new_entry)
+static inline void smc_cache_level_remove(SMCCacheLevel *level,
+                                          SMCCacheEntry *entry)
+{
+    QTAILQ_REMOVE(&level->entries, entry, node);
+    level->size--;
+}
+
+static void smc_cache_level_insert(SMCCache *cache, int lev,
+                                   SMCCacheEntry *new_entry)
 {
     SMCCacheEntry *entry;
     gpointer key;
+    SMCCacheLevel *level = &cache->levels[lev];
 
-    if (cache->size < cache->capacity) {
-        entry = smc_malloc_entry(cache);
-        QTAILQ_INSERT_HEAD(&cache->entries, entry, node);
-        cache->size++;
-    } else {
-        /* Reuse the last entry and move it to the head */
-        entry = QTAILQ_LAST(&cache->entries, smc_entries);
-        key = (void *)(uintptr_t)(entry->block_offset + entry->offset);
-        QTAILQ_REMOVE(&cache->entries, entry, node);
-        QTAILQ_INSERT_HEAD(&cache->entries, entry, node);
-        g_hash_table_remove(cache->map, key);
+    if (level->size == level->capacity) {
+        /* Make room for new entry */
+        entry = QTAILQ_LAST(&level->entries, smc_entries);
+        smc_cache_level_remove(level, entry);
+
+        if (lev == 0) {
+            /* Free this entry */
+            key = (void *)(uintptr_t)(entry->block_offset + entry->offset);
+            g_hash_table_remove(cache->map, key);
+            smc_free_entry(cache, entry);
+        } else {
+            smc_cache_level_insert(cache, lev - 1, entry);
+        }
     }
 
-    /* Update content */
-    entry->block_offset = new_entry->block_offset;
-    entry->offset = new_entry->offset;
-    entry->stamp = new_entry->stamp;
-    entry->in_checkpoint = new_entry->in_checkpoint;
-    key = (void *)(uintptr_t)(entry->block_offset + entry->offset);
-    g_hash_table_insert(cache->map, key, entry);
+    new_entry->pri = lev;
 
-    return entry;
+    QTAILQ_INSERT_HEAD(&level->entries, new_entry, node);
+    level->size++;
+}
+
+static inline void smc_cache_level_move_head(SMCCacheLevel *level,
+                                             SMCCacheEntry *entry)
+{
+    QTAILQ_REMOVE(&level->entries, entry, node);
+    QTAILQ_INSERT_HEAD(&level->entries, entry, node);
 }
 
 void smc_cache_update(SMCCache *cache, uint64_t block_offset, uint64_t offset,
                       uint64_t stamp, uint64_t in_checkpoint)
 {
     SMCCacheEntry *entry;
-    SMCCacheEntry new_entry = { .block_offset = block_offset,
-                                .offset = offset,
-                                .stamp = stamp,
-                                .in_checkpoint = in_checkpoint,
-                              };
+    gpointer key;
+    int lev = 0;
 
     entry = smc_cache_find(cache, block_offset, offset);
     if (entry) {
         /* Entry already exists */
-        smc_cache_move_head(cache, entry);
         entry->stamp = stamp;
         entry->in_checkpoint = in_checkpoint;
+
+        lev = entry->pri;
+        if (lev == SMC_CACHE_MAX_PRI_LEVEL - 1) {
+            smc_cache_level_move_head(&(cache->levels[lev]), entry);
+        } else {
+            smc_cache_level_remove(&(cache->levels[lev]), entry);
+            smc_cache_level_insert(cache, lev + 1, entry);
+        }
+        cache->levels[lev].nr_hits++;
     } else {
-        smc_cache_insert(cache, &new_entry);
+        entry = smc_malloc_entry(cache);
+        entry->block_offset = block_offset;
+        entry->offset = offset;
+        entry->stamp = stamp;
+        entry->in_checkpoint = in_checkpoint;
+
+        smc_cache_level_insert(cache, lev, entry);
+        key = (void *)(uintptr_t)(entry->block_offset + entry->offset);
+        g_hash_table_insert(cache->map, key, entry);
     }
+    cache->nr_updates++;
+}
+
+void smc_cache_stat(SMCCache *cache)
+{
+    SMCCacheLevel *levels = cache->levels;
+
+    printf("hit/update[%d]: %lf %lf %lf\n", cache->nr_updates,
+           levels[2].nr_hits * 1.0 / cache->nr_updates,
+           levels[1].nr_hits * 1.0 / cache->nr_updates,
+           levels[0].nr_hits * 1.0 / cache->nr_updates);
 }
 
 static void smc_cache_test_update_and_show(SMCCache *cache,
                                            uint64_t block_offset,
                                            uint64_t offset)
 {
+    SMCCacheLevel *level;
     SMCCacheEntry *entry;
 
     smc_cache_update(cache, block_offset, offset, 0, 0);
-    printf("Cache:");
-    SMC_CACHE_FOREACH(entry, cache) {
-        printf(" %" PRIu64 ",%" PRIu64, entry->block_offset, entry->offset);
+    printf("Cache:\n");
+    SMC_CACHE_FOREACH_LEVEL(level, cache) {
+        printf("\tLevel:");
+        SMC_CACHE_FOREACH_ENTRY(entry, level) {
+            printf("(%" PRIu64 ", %d)", entry->offset, entry->pri);
+        }
+        printf("\n");
     }
-    printf("\n");
 }
 
+/* Should set the cap to a small value */
 void smc_cache_unit_test(void)
 {
     static bool init = false;
     SMCCache smc_cache;
-    int cap = 5;
-    SMCCacheEntry *entry, *next_entry;
 
     if (init) {
         return;
@@ -197,39 +243,27 @@ void smc_cache_unit_test(void)
         init = true;
     }
     printf("Unit test for SMCCache\n");
-    smc_cache_init(&smc_cache, cap, cap);
+    smc_cache_init(&smc_cache);
+
     smc_cache_test_update_and_show(&smc_cache, 0, 1);
     smc_cache_test_update_and_show(&smc_cache, 0, 2);
     smc_cache_test_update_and_show(&smc_cache, 0, 3);
-    smc_cache_test_update_and_show(&smc_cache, 0, 1);
-    smc_cache_test_update_and_show(&smc_cache, 0, 1);
     smc_cache_test_update_and_show(&smc_cache, 0, 4);
     smc_cache_test_update_and_show(&smc_cache, 0, 5);
-    smc_cache_test_update_and_show(&smc_cache, 0, 3);
     smc_cache_test_update_and_show(&smc_cache, 0, 6);
+    smc_cache_test_update_and_show(&smc_cache, 0, 2);
+    smc_cache_test_update_and_show(&smc_cache, 0, 5);
+    smc_cache_test_update_and_show(&smc_cache, 0, 4);
+    smc_cache_test_update_and_show(&smc_cache, 0, 7);
+    smc_cache_test_update_and_show(&smc_cache, 0, 8);
+    smc_cache_test_update_and_show(&smc_cache, 0, 3);
+    smc_cache_test_update_and_show(&smc_cache, 0, 4);
+    smc_cache_test_update_and_show(&smc_cache, 0, 3);
+    smc_cache_test_update_and_show(&smc_cache, 0, 5);
+    smc_cache_test_update_and_show(&smc_cache, 0, 7);
+    smc_cache_test_update_and_show(&smc_cache, 0, 8);
+    smc_cache_test_update_and_show(&smc_cache, 0, 9);
+    smc_cache_test_update_and_show(&smc_cache, 0, 8);
 
-    printf("reverse:");
-    QTAILQ_FOREACH_REVERSE_SAVE(entry, &smc_cache.entries, smc_entries, node,
-                                next_entry) {
-        printf(" %" PRIu64 ",%" PRIu64, entry->block_offset, entry->offset);
-    }
-    printf("\n");
-    printf("reverse:");
-    QTAILQ_FOREACH_REVERSE_SAVE(entry, &smc_cache.entries, smc_entries, node,
-                                next_entry) {
-        printf(" %" PRIu64 ",%" PRIu64, entry->block_offset, entry->offset);
-        if (entry->offset == 3) {
-            QTAILQ_REMOVE(&smc_cache.entries, entry, node);
-            smc_free_entry(&smc_cache, entry);
-            entry = NULL;
-        }
-    }
-    printf("\n");
-    printf("reverse:");
-    QTAILQ_FOREACH_REVERSE_SAVE(entry, &smc_cache.entries, smc_entries, node,
-                                next_entry) {
-        printf(" %" PRIu64 ",%" PRIu64, entry->block_offset, entry->offset);
-    }
-    printf("\n");
     smc_cache_exit(&smc_cache);
 }

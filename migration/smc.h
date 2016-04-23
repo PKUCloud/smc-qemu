@@ -116,6 +116,7 @@ uint8_t *smc_host_addr_from_offset(void *opaque, uint64_t block_offset,
                                    uint64_t offset);
 void smc_prefetch_map_gen_from_pages(SMCInfo *smc_info);
 void smc_update_prefetch_cache(SMCInfo *smc_info);
+int smc_load_page_stub(QEMUFile *f, void *opaque, void *host_addr, long size);
 
 static inline int smc_dirty_pages_count(SMCInfo *smc_info)
 {

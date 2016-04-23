@@ -1550,7 +1550,8 @@ static inline void *smc_get_ramblock_from_stream(QEMUFile *f,
 }
 
 static inline void *smc_host_addr_with_prefetch(SMCInfo *smc_info, QEMUFile *f,
-                                                ram_addr_t offset, int flags)
+                                                ram_addr_t offset, int flags,
+                                                bool *prefetched)
 {
     uint64_t phy_addr;
     SMCFetchPage *fetch_page;
@@ -1572,9 +1573,11 @@ static inline void *smc_host_addr_with_prefetch(SMCInfo *smc_info, QEMUFile *f,
         backup_pages = smc_backup_pages_insert_empty(smc_info, block->offset,
                                                      offset, TARGET_PAGE_SIZE,
                                                      (uint8_t *)host_addr);
+        *prefetched = true;
         return backup_pages;
     } else {
         SMC_LOG(FETCH, "phy_addr=%" PRIu64 " not in prefetch", phy_addr);
+        *prefetched = false;
         return host_addr;
     }
 }
@@ -1585,6 +1588,8 @@ static int ram_load(QEMUFile *f, void *opaque, int version_id)
     static uint64_t seq_iter;
     int len = 0;
     bool check_prefetch;
+    bool prefetched;
+    void *f_opaque = qemu_file_get_opaque(f);
 
     seq_iter++;
 
@@ -1662,7 +1667,11 @@ static int ram_load(QEMUFile *f, void *opaque, int version_id)
             if (check_prefetch) {
                 /* Need to check if this page has been prefetched */
                 host = smc_host_addr_with_prefetch(&glo_smc_info, f, addr,
-                                                   flags);
+                                                   flags, &prefetched);
+                if (prefetched) {
+                    smc_load_page_stub(f, f_opaque, host, TARGET_PAGE_SIZE);
+                    break;
+                }
             } else {
                 /* Just load the state into guest RAM directly */
                 host = host_from_stream_offset(f, addr, flags);

@@ -1679,6 +1679,7 @@ static int mc_get_buffer_internal(void *opaque, uint8_t *buf, int64_t pos,
 
     return size - len;
 }
+
 static int mc_get_buffer(void *opaque, uint8_t *buf, int64_t pos, int size)
 {
     MCParams *mc = opaque;
@@ -1696,6 +1697,48 @@ static int mc_load_page(QEMUFile *f, void *opaque, void *host_addr, long size)
 
     return mc_get_buffer_internal(mc, host_addr, 0, size, &mc->mem_slab,
                                   mc->nb_slabs - 1);
+}
+
+static inline int smc_get_buffer_internal_stub(void *opaque, uint8_t *buf,
+                                               int64_t pos,
+                                               int size, MCSlab **curr_slab,
+                                               uint64_t end_idx)
+{
+    uint64_t len = size;
+    uint8_t *data = (uint8_t *) buf;
+    MCSlab *slab = *curr_slab;
+    MCParams *mc = opaque;
+
+    while (len && slab) {
+        uint64_t get = MIN(slab->size - slab->read, len);
+
+        data           += get;
+        slab->read     += get;
+        len            -= get;
+        mc->slab_total -= get;
+
+        if (len) {
+            if (slab->idx == end_idx) {
+                break;
+            }
+
+            slab = QTAILQ_NEXT(slab, node);
+        }
+    }
+
+    *curr_slab = slab;
+
+    return size - len;
+}
+
+int smc_load_page_stub(QEMUFile *f, void *opaque, void *host_addr, long size)
+{
+    MCParams *mc = opaque;
+
+    SMC_LOG(GEN, "skip copying a page");
+    mc->pages_loaded++;
+    return smc_get_buffer_internal_stub(mc, host_addr, 0, size, &mc->mem_slab,
+                                        mc->nb_slabs - 1);
 }
 
 /*

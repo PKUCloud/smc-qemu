@@ -4023,7 +4023,7 @@ int smc_send_dirty_info(void *opaque, SMCInfo *smc_info)
                                      sizeof(RDMAControlHeader)) /
                                     sizeof(SMCDirtyPage);
 
-    nb_pages = smc_dirty_pages_count(smc_info);
+    nb_pages = min(smc_dirty_pages_count(smc_info), SMC_NUM_DIRTY_PAGES_SEND);
     dirty_pages = smc_dirty_pages_info(smc_info);
 
     head.padding = nb_pages * sizeof(*dirty_pages);

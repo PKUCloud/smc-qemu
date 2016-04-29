@@ -9,6 +9,7 @@
 #define SMC_DIRTY_FLAGS_IN_CHECKPOINT   0x1U
 
 #define SMC_PREFETCH_RECV_TIME          2
+#define SMC_NUM_DIRTY_PAGES_SEND        21500
 
 /* Info about a dirty page within a chunk */
 typedef struct SMCDirtyPage {

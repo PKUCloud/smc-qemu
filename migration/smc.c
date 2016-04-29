@@ -347,7 +347,7 @@ void smc_prefetch_map_gen_from_pages(SMCInfo *smc_info)
 }
 
 #define SMC_TARGET_PAGE_SIZE            4096
-#define SMC_NUM_DIRTY_PAGES_PREFETCH    20000
+#define SMC_NUM_DIRTY_PAGES_PREFETCH    SMC_NUM_DIRTY_PAGES_SEND
 
 typedef struct SMCItem {
     uint64_t block_offset;

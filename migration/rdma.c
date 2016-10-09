@@ -1967,7 +1967,7 @@ static int qemu_rdma_exchange_recv(RDMAContext *rdma, RDMAControlHeader *head,
 
     if (ret < 0) {
         return ret;
-    }HHHH
+    }
 
     SMC_LOG(GEN, "recv type=%d control message in RDMA_WRID_READY", expecting);
 
@@ -3325,7 +3325,7 @@ static int qemu_rdma_copy_page(QEMUFile *f, void *opaque,
 err:
     SET_ERROR(rdma, ret);
     return ret;
-}HHHH
+}
 
 /*
  * Parameters:

@@ -186,7 +186,7 @@ void smc_cache_update(SMCCache *cache, uint64_t block_offset, uint64_t offset,
             smc_cache_level_move_head(&(cache->levels[lev]), entry);
         } else {
             smc_cache_level_remove(&(cache->levels[lev]), entry);
-            smc_cache_level_insert(cache, SMC_CHCHE_MAX_PRI_LEVEL - 1, entry);
+            smc_cache_level_insert(cache, SMC_CACHE_MAX_PRI_LEVEL - 1, entry);
         }
         cache->levels[lev].nr_hits++;
     } else {

@@ -8,6 +8,7 @@
 #define SMC_CACHE_MAX_STAMP_DIFF        5
 #define SMC_CACHE_MAX_PRI_LEVEL         3
 
+
 typedef struct SMCCacheEntry {
     /* block_offset and offset as the key */
     uint64_t block_offset;

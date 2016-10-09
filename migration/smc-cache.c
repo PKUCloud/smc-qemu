@@ -1,7 +1,7 @@
 #include "smc-cache.h"
 #include "smc-debug.h"
 
-static const int SMC_CACHE_CAPS[] = {30000, 2000, 1000};
+static const int SMC_CACHE_CAPS[] = {30000, 30000, 6000};
 
 #define SMC_CACHE_SOFT_CAP      30000
 
@@ -145,7 +145,7 @@ static void smc_cache_level_insert(SMCCache *cache, int lev,
         entry = QTAILQ_LAST(&level->entries, smc_entries);
         smc_cache_level_remove(level, entry);
 
-        if (lev == 0) {
+        if (lev == 0 || lev == 1) {
             /* Free this entry */
             key = (void *)(uintptr_t)(entry->block_offset + entry->offset);
             g_hash_table_remove(cache->map, key);
@@ -186,7 +186,7 @@ void smc_cache_update(SMCCache *cache, uint64_t block_offset, uint64_t offset,
             smc_cache_level_move_head(&(cache->levels[lev]), entry);
         } else {
             smc_cache_level_remove(&(cache->levels[lev]), entry);
-            smc_cache_level_insert(cache, lev + 1, entry);
+            smc_cache_level_insert(cache, SMC_CHCHE_MAX_PRI_LEVEL - 1, entry);
         }
         cache->levels[lev].nr_hits++;
     } else {

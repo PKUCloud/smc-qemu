@@ -1967,7 +1967,7 @@ static int qemu_rdma_exchange_recv(RDMAContext *rdma, RDMAControlHeader *head,
 
     if (ret < 0) {
         return ret;
-    }
+    }HHHH
 
     SMC_LOG(GEN, "recv type=%d control message in RDMA_WRID_READY", expecting);
 
@@ -3325,7 +3325,7 @@ static int qemu_rdma_copy_page(QEMUFile *f, void *opaque,
 err:
     SET_ERROR(rdma, ret);
     return ret;
-}
+}HHHH
 
 /*
  * Parameters:
@@ -4612,6 +4612,7 @@ static int smc_do_prefetch_dirty_pages(RDMAContext *rdma, SMCInfo *smc_info,
     *complete_pages = 0;
     SMC_CACHE_FOREACH_LEVEL(level, &smc_info->cache) {
         SMC_CACHE_FOREACH_ENTRY(entry, level) {
+            if (!entry->pri) continue;
             fetch_page = smc_prefetch_pages_insert(smc_info,
                                                    entry->block_offset,
                                                    entry->offset,

@@ -1212,6 +1212,8 @@ static void *mc_thread(void *opaque)
 
         nr_dirty_pages = smc_dirty_pages_count(&glo_smc_info);
 
+        nr_prefetch_pages = smc_prefetch_pages_count(&glo_smc_info);
+
         s->nr_dirty_pages += nr_dirty_pages;
         s->nr_trans_pages += mc.total_copies;
 
@@ -1220,7 +1222,14 @@ static void *mc_thread(void *opaque)
         } else {
             tmp = 1;
         }
+
         s->fetch_rate_sum += tmp;
+        if (nr_dirty_pages) {
+            tmp = (nr_dirty_pages - mc.total_copies) * 1.0 / nr_prefetch_pages;
+        } else{
+            tmp = 0;
+        }
+        s->fetch_acc_rate_sum += tmp;
 
         SMC_STAT("checkpoint #%" PRIu64 ": dirty_pages %d "
                 "transfered_pages %" PRIu64 " rate=%lf", mc.checkpoints,
@@ -1974,6 +1983,8 @@ void smc_print_stat(void)
     }
     printf("[SMC]Valid prefetch rate average: %lf\n",
            s->fetch_rate_sum / s->checkpoints);
+    printf("[SMC]Precison prefetch rate average: %lf\n",
+           s->fetch_acc_rate_sum / s->checkpoints);
     if (s->checkpoints) {
         printf("[SMC]Average wait_time: %lf\n", s->total_wait_time * 1.0 /
                s->checkpoints);

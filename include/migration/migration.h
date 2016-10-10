@@ -91,6 +91,7 @@ struct MigrationState
     int64_t nr_trans_pages;
     int64_t total_wait_time;
     double fetch_rate_sum;  /* Sum of valid prefetch rate of each round */
+    double fetch_acc_rate_sum;
     int fetch_speed;        /* Prefetch speed */
 };
 

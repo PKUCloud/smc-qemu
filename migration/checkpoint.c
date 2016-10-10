@@ -1092,6 +1092,7 @@ static void *mc_thread(void *opaque)
         int64_t start_time, xmit_start, end_time;
         bool commit_sent = false;
         int nr_dirty_pages;
+        int nr_prefetch_pages;
         double tmp;
         int fetch_speed;
 

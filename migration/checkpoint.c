@@ -1225,7 +1225,7 @@ static void *mc_thread(void *opaque)
         }
 
         s->fetch_rate_sum += tmp;
-        if (nr_dirty_pages) {
+        if (nr_prefetch_pages) {
             tmp = (nr_dirty_pages - mc.total_copies) * 1.0 / nr_prefetch_pages;
         } else{
             tmp = 0;

@@ -826,7 +826,6 @@ void qemu_savevm_state_complete(QEMUFile *f)
     SMC_LOG(GEN, "starts");
     cpu_synchronize_all_states();
 
-    fprintf(stderr,"foreach start\n");
     QTAILQ_FOREACH(se, &savevm_state.handlers, entry) {
         if (!se->ops || !se->ops->save_live_complete) {
             continue;
@@ -842,9 +841,7 @@ void qemu_savevm_state_complete(QEMUFile *f)
                 se->section_id);
         save_section_header(f, se, QEMU_VM_SECTION_END);
         
-        fprintf(stderr,"ops\n");
         ret = se->ops->save_live_complete(f, se->opaque);
-        fprintf(stderr,"ops end\n");
         trace_savevm_section_end(se->idstr, se->section_id, ret);
         save_section_footer(f, se);
         if (ret < 0) {
@@ -878,9 +875,9 @@ void qemu_savevm_state_complete(QEMUFile *f)
         trace_savevm_section_end(se->idstr, se->section_id, 0);
         save_section_footer(f, se);
     }
-
+    fprintf(stderr,"foreach endi 2\n");
     qemu_put_byte(f, QEMU_VM_EOF);
-
+    fprintf(stderr,"put byte end\n");
     json_end_array(vmdesc);
     qjson_finish(vmdesc);
     vmdesc_len = strlen(qjson_get_str(vmdesc));

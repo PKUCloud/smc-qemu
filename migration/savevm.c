@@ -59,7 +59,6 @@
 #define ARP_PTYPE_IP 0x0800
 #define ARP_OP_REQUEST_REV 0x3
 
-#define SMC_TARGET_PAGE_SIZE 512
 
 static bool skip_section_footers;
 
@@ -854,7 +853,7 @@ void qemu_savevm_state_complete(QEMUFile *f)
 
     SMC_LOG(GEN, "send VMDESC json");
     vmdesc = qjson_new();
-    json_prop_int(vmdesc, "page_size", SMC_TARGET_PAGE_SIZE);
+    json_prop_int(vmdesc, "page_size", TARGET_PAGE_SIZE);
     json_start_array(vmdesc, "devices");
     QTAILQ_FOREACH(se, &savevm_state.handlers, entry) {
 

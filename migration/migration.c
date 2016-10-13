@@ -828,11 +828,9 @@ static void *migration_thread(void *opaque)
         uint64_t pending_size;
 
         if (!qemu_file_rate_limit(s->file)) {
-            fprintf(stderr, "rate limit\n");
             pending_size = qemu_savevm_state_pending(s->file, max_size);
             trace_migrate_pending(pending_size, max_size);
             if (pending_size && pending_size >= max_size) {
-                fprintf(stderr,"pending_size >=\n");
                 qemu_savevm_state_iterate(s->file);
             } else {
                 fprintf(stderr,"pending size <=\n");
@@ -843,24 +841,34 @@ static void *migration_thread(void *opaque)
                 qemu_system_wakeup_request(QEMU_WAKEUP_REASON_OTHER);
                 old_vm_running = runstate_is_running();
 
+                fprintf(stderr,"stop\n");
+
                 ret = vm_stop_force_state(RUN_STATE_FINISH_MIGRATE);
+
+                fprintf(stderr, "force\n");
                 if (ret >= 0) {
                     qemu_file_set_rate_limit(s->file, INT64_MAX);
                     qemu_savevm_state_complete(s->file);
                 }
+                fprintf(stderr, "ret > 0\n");
                 qemu_mutex_unlock_iothread();
-
+                
                 if (ret < 0) {
+                    fprintf(stderr, "ret < 0\n");
                     migrate_set_state(s, MIGRATION_STATUS_ACTIVE,
                                       MIGRATION_STATUS_FAILED);
+                    fprintf(stderr, "break\n");
                     break;
                 }
-
+                fprintf(stderr, "ret > 0\n");
                 if (!qemu_file_get_error(s->file)) {
+                    fprintf(stderr, "! error\n");
                     if (!migrate_use_mc()) {
+                        fprintf(stderr, "! use mc\n");
                         migrate_set_state(s,
                             MIGRATION_STATUS_ACTIVE, MIGRATION_STATUS_COMPLETED);
                     }
+                    fprintf(stderr,"break\n");
                     break;
                 }
             }

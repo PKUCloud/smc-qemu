@@ -828,13 +828,16 @@ static void *migration_thread(void *opaque)
         uint64_t pending_size;
 
         if (!qemu_file_rate_limit(s->file)) {
+            fprintf(stderr, "rate limit\n");
             pending_size = qemu_savevm_state_pending(s->file, max_size);
             trace_migrate_pending(pending_size, max_size);
             if (pending_size && pending_size >= max_size) {
+                fprintf(stderr."pending_size >=\n");
                 qemu_savevm_state_iterate(s->file);
             } else {
+                fprintf(stderr,"pending size <=\n");
                 int ret;
-
+                
                 qemu_mutex_lock_iothread();
                 start_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
                 qemu_system_wakeup_request(QEMU_WAKEUP_REASON_OTHER);
@@ -862,12 +865,13 @@ static void *migration_thread(void *opaque)
                 }
             }
         }
-
+        fprintf(stderr, "qemu file rate limit\n");
         if (qemu_file_get_error(s->file)) {
             migrate_set_state(s, MIGRATION_STATUS_ACTIVE,
                               MIGRATION_STATUS_FAILED);
             break;
         }
+        fprintf(stderr, "calc time\n");
         current_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
         if (current_time >= initial_time + BUFFER_DELAY) {
             uint64_t transferred_bytes = qemu_ftell(s->file) - initial_bytes;
@@ -889,6 +893,7 @@ static void *migration_thread(void *opaque)
             initial_time = current_time;
             initial_bytes = qemu_ftell(s->file);
         }
+        fprintf(stderr, "calc time end\n");
         if (qemu_file_rate_limit(s->file)) {
             /* usleep expects microseconds */
             g_usleep((initial_time + BUFFER_DELAY - current_time)*1000);

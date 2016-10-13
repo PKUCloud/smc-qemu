@@ -832,7 +832,7 @@ static void *migration_thread(void *opaque)
             pending_size = qemu_savevm_state_pending(s->file, max_size);
             trace_migrate_pending(pending_size, max_size);
             if (pending_size && pending_size >= max_size) {
-                fprintf(stderr."pending_size >=\n");
+                fprintf(stderr,"pending_size >=\n");
                 qemu_savevm_state_iterate(s->file);
             } else {
                 fprintf(stderr,"pending size <=\n");

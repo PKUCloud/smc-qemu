@@ -866,9 +866,9 @@ void qemu_savevm_state_complete(QEMUFile *f)
         json_start_object(vmdesc, NULL);
         json_prop_str(vmdesc, "name", se->idstr);
         json_prop_int(vmdesc, "instance_id", se->instance_id);
-
+        fprintf(stderr,"save start\n");
         save_section_header(f, se, QEMU_VM_SECTION_FULL);
-
+        fprintf(stderr,"save end\n");
         vmstate_save(f, se, vmdesc);
 
         json_end_object(vmdesc);

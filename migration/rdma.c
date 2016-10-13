@@ -5105,6 +5105,7 @@ err:
 void rdma_start_outgoing_migration(void *opaque,
                             const char *host_port, Error **errp)
 {
+    fprintf(stderr,"rdma start outgoint");
     MigrationState *s = opaque;
     Error *local_err = NULL, **temp = &local_err;
     RDMAContext *rdma = qemu_rdma_data_init(host_port, &local_err);

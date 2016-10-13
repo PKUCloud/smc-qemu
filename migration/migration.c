@@ -604,6 +604,7 @@ void qmp_migrate(const char *uri, bool has_blk, bool blk,
                  bool has_inc, bool inc, bool has_detach, bool detach,
                  Error **errp)
 {
+    fprintf(stderr, "qmp\n");
     Error *local_err = NULL;
     MigrationState *s = migrate_get_current();
     MigrationParams params;
@@ -636,6 +637,7 @@ void qmp_migrate(const char *uri, bool has_blk, bool blk,
 
     s = migrate_init(&params);
 
+    fprintf(stderr,"rdma\n");
     if (strstart(uri, "tcp:", &p)) {
         tcp_start_outgoing_migration(s, p, &local_err);
 #ifdef CONFIG_RDMA
@@ -804,6 +806,7 @@ int64_t migrate_xbzrle_cache_size(void)
 
 static void *migration_thread(void *opaque)
 {
+    fprintf(stderr,"migration thread\n");
     MigrationState *s = opaque;
     int64_t initial_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
     int64_t setup_start = qemu_clock_get_ms(QEMU_CLOCK_HOST);
@@ -819,7 +822,7 @@ static void *migration_thread(void *opaque)
     migrate_set_state(s, MIGRATION_STATUS_SETUP, MIGRATION_STATUS_ACTIVE);
 
     SMC_LOG(GEN, "status MIGRATION_STATUS_SETUP -> MIGRATION_STATUS_ACTIVE");
-
+    fprintf(stderr, "migration thread setup\n");
     while (s->state == MIGRATION_STATUS_ACTIVE) {
         int64_t current_time;
         uint64_t pending_size;
@@ -893,6 +896,7 @@ static void *migration_thread(void *opaque)
     }
 
     qemu_mutex_lock_iothread();
+    fprintf(stderr,"migrate thread conf\n");
     if (s->state == MIGRATION_STATUS_COMPLETED) {
         int64_t end_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
         uint64_t transferred_bytes = qemu_ftell(s->file);
@@ -926,6 +930,7 @@ static void *migration_thread(void *opaque)
 
 void migrate_fd_connect(MigrationState *s)
 {
+    fprintf(stderr,"migrate fd\n");
     /* This is a best 1st approximation. ns to ms */
     s->expected_downtime = max_downtime/1000000;
     s->cleanup_bh = qemu_bh_new(migrate_fd_cleanup, s);
@@ -944,6 +949,7 @@ void migrate_fd_connect(MigrationState *s)
     migrate_compress_threads_create();
     s->thread = g_malloc0(sizeof(*s->thread));
     SMC_LOG(INIT, "create migration thread");
+    fprintf(stderr, "migrate fd create thread\n");
     qemu_thread_create(s->thread, "migration", migration_thread, s,
                        QEMU_THREAD_JOINABLE);
 }

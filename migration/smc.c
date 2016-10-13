@@ -346,7 +346,7 @@ void smc_prefetch_map_gen_from_pages(SMCInfo *smc_info)
     SMC_LOG(FETCH, "add %d items in prefetch map", nb_pages);
 }
 
-#define SMC_TARGET_PAGE_SIZE            4096
+#define SMC_TARGET_PAGE_SIZE            512
 #define SMC_NUM_DIRTY_PAGES_PREFETCH    SMC_NUM_DIRTY_PAGES_SEND
 
 typedef struct SMCItem {

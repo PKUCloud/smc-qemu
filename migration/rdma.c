@@ -4584,7 +4584,7 @@ static int smc_do_prefetch_page(RDMAContext *rdma, SMCInfo *smc_info,
 }
 
 #define SMC_FETCH_PAGES_PER_ROUND   200
-#define SMC_TARGET_PAGE_SIZE        4096
+#define SMC_TARGET_PAGE_SIZE        512
 /* 70 pages/ms */
 #define SMC_FETCH_PAGES_MIN_NUM     500
 

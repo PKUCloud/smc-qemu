@@ -67,10 +67,12 @@ static uint64_t bitmap_sync_count;
 #define RAM_SAVE_FLAG_EOS      0x10
 #define RAM_SAVE_FLAG_CONTINUE 0x20
 #define RAM_SAVE_FLAG_XBZRLE   0x40
+
+#define SMC_TARGET_PAGE_SIZE 512
 /* 0x80 is reserved in migration.h start with 0x100 next */
 #define RAM_SAVE_FLAG_COMPRESS_PAGE    0x100
 
-static const uint8_t ZERO_TARGET_PAGE[TARGET_PAGE_SIZE];
+static const uint8_t ZERO_TARGET_PAGE[SMC_TARGET_PAGE_SIZE];
 
 static inline bool is_zero_range(uint8_t *p, uint64_t size)
 {
@@ -115,7 +117,7 @@ int64_t xbzrle_cache_resize(int64_t new_size)
     PageCache *new_cache;
     int64_t ret;
 
-    if (new_size < TARGET_PAGE_SIZE) {
+    if (new_size < SMC_TARGET_PAGE_SIZE) {
         return -1;
     }
 
@@ -125,8 +127,8 @@ int64_t xbzrle_cache_resize(int64_t new_size)
         if (pow2floor(new_size) == migrate_xbzrle_cache_size()) {
             goto out_new_size;
         }
-        new_cache = cache_init(new_size / TARGET_PAGE_SIZE,
-                                        TARGET_PAGE_SIZE);
+        new_cache = cache_init(new_size / SMC_TARGET_PAGE_SIZE,
+                                        SMC_TARGET_PAGE_SIZE);
         if (!new_cache) {
             error_report("Error creating cache");
             ret = -1;
@@ -168,7 +170,7 @@ void acct_clear(void)
 
 uint64_t dup_mig_bytes_transferred(void)
 {
-    return acct_info.dup_pages * TARGET_PAGE_SIZE;
+    return acct_info.dup_pages * SMC_TARGET_PAGE_SIZE;
 }
 
 uint64_t dup_mig_pages_transferred(void)
@@ -178,7 +180,7 @@ uint64_t dup_mig_pages_transferred(void)
 
 uint64_t skipped_mig_bytes_transferred(void)
 {
-    return acct_info.skipped_pages * TARGET_PAGE_SIZE;
+    return acct_info.skipped_pages * SMC_TARGET_PAGE_SIZE;
 }
 
 uint64_t skipped_mig_pages_transferred(void)
@@ -188,7 +190,7 @@ uint64_t skipped_mig_pages_transferred(void)
 
 uint64_t norm_mig_bytes_transferred(void)
 {
-    return acct_info.norm_pages * TARGET_PAGE_SIZE;
+    return acct_info.norm_pages * SMC_TARGET_PAGE_SIZE;
 }
 
 uint64_t norm_mig_log_dirty_time(void)
@@ -473,12 +475,12 @@ static int save_xbzrle_page(QEMUFile *f, uint8_t **current_data,
     prev_cached_page = get_cached_data(XBZRLE.cache, current_addr);
 
     /* save current buffer into memory */
-    memcpy(XBZRLE.current_buf, *current_data, TARGET_PAGE_SIZE);
+    memcpy(XBZRLE.current_buf, *current_data, SMC_TARGET_PAGE_SIZE);
 
     /* XBZRLE encoding (if there is no overflow) */
     encoded_len = xbzrle_encode_buffer(prev_cached_page, XBZRLE.current_buf,
-                                       TARGET_PAGE_SIZE, XBZRLE.encoded_buf,
-                                       TARGET_PAGE_SIZE);
+                                       SMC_TARGET_PAGE_SIZE, XBZRLE.encoded_buf,
+                                       SMC_TARGET_PAGE_SIZE);
     if (encoded_len == 0) {
         DPRINTF("Skipping unmodified page\n");
         return 0;
@@ -487,7 +489,7 @@ static int save_xbzrle_page(QEMUFile *f, uint8_t **current_data,
         acct_info.xbzrle_overflows++;
         /* update data in the cache */
         if (!last_stage) {
-            memcpy(prev_cached_page, *current_data, TARGET_PAGE_SIZE);
+            memcpy(prev_cached_page, *current_data, SMC_TARGET_PAGE_SIZE);
             *current_data = prev_cached_page;
         }
         return -1;
@@ -495,7 +497,7 @@ static int save_xbzrle_page(QEMUFile *f, uint8_t **current_data,
 
     /* we need to update the data in the cache, in order to get the same data */
     if (!last_stage) {
-        memcpy(prev_cached_page, XBZRLE.current_buf, TARGET_PAGE_SIZE);
+        memcpy(prev_cached_page, XBZRLE.current_buf, SMC_TARGET_PAGE_SIZE);
     }
 
     /* Send XBZRLE based compressed page */
@@ -609,7 +611,7 @@ static void migration_bitmap_sync(void)
                we turn on the throttle down logic */
             bytes_xfer_now = ram_bytes_transferred();
             if (s->dirty_pages_rate &&
-               (num_dirty_pages_period * TARGET_PAGE_SIZE >
+               (num_dirty_pages_period * SMC_TARGET_PAGE_SIZE >
                    (bytes_xfer_now - bytes_xfer_prev)/2) &&
                (dirty_rate_high_cnt++ > 4)) {
                     trace_migration_throttle();
@@ -632,7 +634,7 @@ static void migration_bitmap_sync(void)
         }
         s->dirty_pages_rate = num_dirty_pages_period * 1000
             / (end_time - start_time);
-        s->dirty_bytes_rate = s->dirty_pages_rate * TARGET_PAGE_SIZE;
+        s->dirty_bytes_rate = s->dirty_pages_rate * SMC_TARGET_PAGE_SIZE;
         start_time = end_time;
         num_dirty_pages_period = 0;
     }
@@ -655,7 +657,7 @@ static int save_zero_page(QEMUFile *f, RAMBlock *block, ram_addr_t offset,
 {
     int pages = -1;
 
-    if (is_zero_range(p, TARGET_PAGE_SIZE)) {
+    if (is_zero_range(p, SMC_TARGET_PAGE_SIZE)) {
         acct_info.dup_pages++;
         *bytes_transferred += save_page_header(f, block,
                                                offset | RAM_SAVE_FLAG_COMPRESS);
@@ -694,7 +696,7 @@ static int ram_save_page(QEMUFile *f, RAMBlock* block, ram_addr_t offset,
     /* In doubt sent page as normal */
     bytes_xmit = 0;
     ret = ram_control_save_page(f, block->offset, block->host,
-                           offset, TARGET_PAGE_SIZE, &bytes_xmit);
+                           offset, SMC_TARGET_PAGE_SIZE, &bytes_xmit);
     if (bytes_xmit) {
         *bytes_transferred += bytes_xmit;
         pages = 1;
@@ -740,12 +742,12 @@ static int ram_save_page(QEMUFile *f, RAMBlock* block, ram_addr_t offset,
                                                offset | RAM_SAVE_FLAG_PAGE);
         if (ret != RAM_SAVE_CONTROL_DELAYED) {
             if (send_async) {
-                qemu_put_buffer_async(f, p, TARGET_PAGE_SIZE);
+                qemu_put_buffer_async(f, p, SMC_TARGET_PAGE_SIZE);
             } else {
-                qemu_put_buffer(f, p, TARGET_PAGE_SIZE);
+                qemu_put_buffer(f, p, SMC_TARGET_PAGE_SIZE);
             }
         }
-        *bytes_transferred += TARGET_PAGE_SIZE;
+        *bytes_transferred += SMC_TARGET_PAGE_SIZE;
         pages = 1;
         acct_info.norm_pages++;
     }
@@ -766,7 +768,7 @@ static int do_compress_ram_page(CompressParam *param)
 
     bytes_sent = save_page_header(param->file, block, offset |
                                   RAM_SAVE_FLAG_COMPRESS_PAGE);
-    blen = qemu_put_compression_data(param->file, p, TARGET_PAGE_SIZE,
+    blen = qemu_put_compression_data(param->file, p, SMC_TARGET_PAGE_SIZE,
                                      migrate_compress_level());
     bytes_sent += blen;
 
@@ -878,7 +880,7 @@ static int ram_save_compressed_page(QEMUFile *f, RAMBlock *block,
 
     bytes_xmit = 0;
     ret = ram_control_save_page(f, block->offset, block->host,
-                                offset, TARGET_PAGE_SIZE, &bytes_xmit);
+                                offset, SMC_TARGET_PAGE_SIZE, &bytes_xmit);
     if (bytes_xmit) {
         *bytes_transferred += bytes_xmit;
         pages = 1;
@@ -997,21 +999,21 @@ static int ram_find_and_save_block(QEMUFile *f, bool last_stage,
                     SMC_HASH hash_val;
 
                     hash_val = smc_cal_hash(block->host + offset,
-                                            TARGET_PAGE_SIZE);
+                                            SMC_TARGET_PAGE_SIZE);
                     is_clean = smc_check_dirty_page(&glo_smc_info,
                                                     block->offset, offset,
-                                                    TARGET_PAGE_SIZE,
+                                                    SMC_TARGET_PAGE_SIZE,
                                                     hash_val);
                     if (is_clean) {
                         /* This page is the same as the prefetched page */
                         smc_dirty_pages_insert(&glo_smc_info, block->offset,
-                                               offset, TARGET_PAGE_SIZE, 0);
+                                               offset, SMC_TARGET_PAGE_SIZE, 0);
                         last_seen_block = block;
                         last_offset = offset;
                         continue;
                     } else {
                         smc_dirty_pages_insert(&glo_smc_info, block->offset,
-                                               offset, TARGET_PAGE_SIZE,
+                                               offset, SMC_TARGET_PAGE_SIZE,
                                                SMC_DIRTY_FLAGS_IN_CHECKPOINT);
                     }
                 }
@@ -1035,7 +1037,7 @@ static int ram_find_and_save_block(QEMUFile *f, bool last_stage,
 
 void acct_update_position(QEMUFile *f, size_t size, bool zero)
 {
-    uint64_t pages = size / TARGET_PAGE_SIZE;
+    uint64_t pages = size / SMC_TARGET_PAGE_SIZE;
     if (zero) {
         acct_info.dup_pages += pages;
     } else {
@@ -1052,7 +1054,7 @@ static ram_addr_t ram_save_remaining(void)
 
 uint64_t ram_bytes_remaining(void)
 {
-    return ram_save_remaining() * TARGET_PAGE_SIZE;
+    return ram_save_remaining() * SMC_TARGET_PAGE_SIZE;
 }
 
 uint64_t ram_bytes_transferred(void)
@@ -1147,8 +1149,8 @@ static int ram_save_setup(QEMUFile *f, void *opaque)
     if (migrate_use_xbzrle()) {
         XBZRLE_cache_lock();
         XBZRLE.cache = cache_init(migrate_xbzrle_cache_size() /
-                                  TARGET_PAGE_SIZE,
-                                  TARGET_PAGE_SIZE);
+                                  SMC_TARGET_PAGE_SIZE,
+                                  SMC_TARGET_PAGE_SIZE);
         if (!XBZRLE.cache) {
             XBZRLE_cache_unlock();
             error_report("Error creating cache");
@@ -1157,13 +1159,13 @@ static int ram_save_setup(QEMUFile *f, void *opaque)
         XBZRLE_cache_unlock();
 
         /* We prefer not to abort if there is no memory */
-        XBZRLE.encoded_buf = g_try_malloc0(TARGET_PAGE_SIZE);
+        XBZRLE.encoded_buf = g_try_malloc0(SMC_TARGET_PAGE_SIZE);
         if (!XBZRLE.encoded_buf) {
             error_report("Error allocating encoded_buf");
             return -1;
         }
 
-        XBZRLE.current_buf = g_try_malloc(TARGET_PAGE_SIZE);
+        XBZRLE.current_buf = g_try_malloc(SMC_TARGET_PAGE_SIZE);
         if (!XBZRLE.current_buf) {
             error_report("Error allocating current_buf");
             g_free(XBZRLE.encoded_buf);
@@ -1329,7 +1331,7 @@ static uint64_t ram_save_pending(QEMUFile *f, void *opaque, uint64_t max_size)
 {
     uint64_t remaining_size;
 
-    remaining_size = ram_save_remaining() * TARGET_PAGE_SIZE;
+    remaining_size = ram_save_remaining() * SMC_TARGET_PAGE_SIZE;
 
     if (remaining_size < max_size) {
         qemu_mutex_lock_iothread();
@@ -1337,7 +1339,7 @@ static uint64_t ram_save_pending(QEMUFile *f, void *opaque, uint64_t max_size)
         migration_bitmap_sync();
         rcu_read_unlock();
         qemu_mutex_unlock_iothread();
-        remaining_size = ram_save_remaining() * TARGET_PAGE_SIZE;
+        remaining_size = ram_save_remaining() * SMC_TARGET_PAGE_SIZE;
     }
     return remaining_size;
 }
@@ -1348,7 +1350,7 @@ static int load_xbzrle(QEMUFile *f, ram_addr_t addr, void *host)
     int xh_flags;
 
     if (!xbzrle_decoded_buf) {
-        xbzrle_decoded_buf = g_malloc(TARGET_PAGE_SIZE);
+        xbzrle_decoded_buf = g_malloc(SMC_TARGET_PAGE_SIZE);
     }
 
     /* extract RLE header */
@@ -1360,7 +1362,7 @@ static int load_xbzrle(QEMUFile *f, ram_addr_t addr, void *host)
         return -1;
     }
 
-    if (xh_len > TARGET_PAGE_SIZE) {
+    if (xh_len > SMC_TARGET_PAGE_SIZE) {
         error_report("Failed to load XBZRLE page - len overflow!");
         return -1;
     }
@@ -1369,7 +1371,7 @@ static int load_xbzrle(QEMUFile *f, ram_addr_t addr, void *host)
 
     /* decode RLE */
     if (xbzrle_decode_buffer(xbzrle_decoded_buf, xh_len, host,
-                             TARGET_PAGE_SIZE) == -1) {
+                             SMC_TARGET_PAGE_SIZE) == -1) {
         error_report("Failed to load XBZRLE page - decode error!");
         return -1;
     }
@@ -1432,7 +1434,7 @@ static void *do_data_decompress(void *opaque)
         qemu_mutex_lock(&param->mutex);
         while (!param->start && !quit_decomp_thread) {
             qemu_cond_wait(&param->cond, &param->mutex);
-            pagesize = TARGET_PAGE_SIZE;
+            pagesize = SMC_TARGET_PAGE_SIZE;
             if (!quit_decomp_thread) {
                 /* uncompress() will return failed in some case, especially
                  * when the page is dirted when doing the compression, it's
@@ -1457,13 +1459,13 @@ void migrate_decompress_threads_create(void)
     thread_count = migrate_decompress_threads();
     decompress_threads = g_new0(QemuThread, thread_count);
     decomp_param = g_new0(DecompressParam, thread_count);
-    compressed_data_buf = g_malloc0(compressBound(TARGET_PAGE_SIZE));
+    compressed_data_buf = g_malloc0(compressBound(SMC_TARGET_PAGE_SIZE));
     quit_decomp_thread = false;
     for (i = 0; i < thread_count; i++) {
         SMC_LOG(INIT, "create decompress thread #%d", i);
         qemu_mutex_init(&decomp_param[i].mutex);
         qemu_cond_init(&decomp_param[i].cond);
-        decomp_param[i].compbuf = g_malloc0(compressBound(TARGET_PAGE_SIZE));
+        decomp_param[i].compbuf = g_malloc0(compressBound(SMC_TARGET_PAGE_SIZE));
         qemu_thread_create(decompress_threads + i, "decompress",
                            do_data_decompress, decomp_param + i,
                            QEMU_THREAD_JOINABLE);
@@ -1571,7 +1573,7 @@ static inline void *smc_host_addr_with_prefetch(SMCInfo *smc_info, QEMUFile *f,
         SMC_LOG(FETCH, "phy_adr=%" PRIu64 " in prefetch page idx=%d", phy_addr,
                 fetch_page->idx);
         backup_pages = smc_backup_pages_insert_empty(smc_info, block->offset,
-                                                     offset, TARGET_PAGE_SIZE,
+                                                     offset, SMC_TARGET_PAGE_SIZE,
                                                      (uint8_t *)host_addr);
         *prefetched = true;
         return backup_pages;
@@ -1659,7 +1661,7 @@ static int ram_load(QEMUFile *f, void *opaque, int version_id)
                 break;
             }
             ch = qemu_get_byte(f);
-            ram_handle_compressed(host, ch, TARGET_PAGE_SIZE);
+            ram_handle_compressed(host, ch, SMC_TARGET_PAGE_SIZE);
             break;
         case RAM_SAVE_FLAG_PAGE:
             check_prefetch = smc_loadvm_need_check_prefetch(&glo_smc_info);
@@ -1669,7 +1671,7 @@ static int ram_load(QEMUFile *f, void *opaque, int version_id)
                 host = smc_host_addr_with_prefetch(&glo_smc_info, f, addr,
                                                    flags, &prefetched);
                 if (prefetched) {
-                    smc_load_page_stub(f, f_opaque, host, TARGET_PAGE_SIZE);
+                    smc_load_page_stub(f, f_opaque, host, SMC_TARGET_PAGE_SIZE);
                     break;
                 }
             } else {
@@ -1683,9 +1685,9 @@ static int ram_load(QEMUFile *f, void *opaque, int version_id)
                 break;
             }
 
-            if (ram_control_load_page(f, host, TARGET_PAGE_SIZE)
+            if (ram_control_load_page(f, host, SMC_TARGET_PAGE_SIZE)
                     == RAM_LOAD_CONTROL_NOT_SUPP)
-                qemu_get_buffer(f, host, TARGET_PAGE_SIZE);
+                qemu_get_buffer(f, host, SMC_TARGET_PAGE_SIZE);
             break;
         case RAM_SAVE_FLAG_COMPRESS_PAGE:
             SMC_LOG(GEN, "warning: RAM_SAVE_FLAG_COMPRESS_PAGE");
@@ -1697,7 +1699,7 @@ static int ram_load(QEMUFile *f, void *opaque, int version_id)
             }
 
             len = qemu_get_be32(f);
-            if (len < 0 || len > compressBound(TARGET_PAGE_SIZE)) {
+            if (len < 0 || len > compressBound(SMC_TARGET_PAGE_SIZE)) {
                 error_report("Invalid compressed data length: %d", len);
                 ret = -EINVAL;
                 break;

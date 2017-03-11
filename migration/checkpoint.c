@@ -31,6 +31,8 @@
 #include "block/block.h"
 #include "sysemu/block-backend.h"
 #include <sys/ioctl.h>
+#include <sys/socket.h>
+#include <linux/if.h>
 
 #include "smc.h"
 #include "smc-debug.h"

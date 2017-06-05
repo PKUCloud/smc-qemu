@@ -6,6 +6,9 @@
 #include "smc-debug.h"
 #include "smc-cache.h"
 
+//#define SMC_PREFETCH
+//#define SMC_PML_PREFETCH
+
 #define SMC_DIRTY_FLAGS_IN_CHECKPOINT   0x1U
 
 #define SMC_PREFETCH_RECV_TIME          2

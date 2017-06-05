@@ -98,12 +98,14 @@ void smc_init(SMCInfo *smc_info, void *opaque)
     SMC_LOG(INIT, "");
     SMC_ASSERT(!smc_info->init);
     memset(smc_info, 0, sizeof(*smc_info));
+#ifdef SMC_PREFETCH
     smc_set_init(&smc_info->dirty_pages, sizeof(SMCDirtyPage));
     smc_set_init(&smc_info->prefetch_pages, sizeof(SMCFetchPage));
     smc_set_init(&smc_info->backup_pages, sizeof(SMCBackupPage));
     smc_info->prefetch_map = g_hash_table_new(g_direct_hash, g_direct_equal);
-    smc_info->opaque = opaque;
     smc_cache_init(&smc_info->cache);
+#endif
+    smc_info->opaque = opaque;
     smc_info->init = true;
 }
 
@@ -111,12 +113,14 @@ void smc_exit(SMCInfo *smc_info)
 {
     SMC_LOG(INIT, "");
     SMC_ASSERT(smc_info->init);
+#ifdef SMC_PREFETCH
     smc_set_free(&smc_info->dirty_pages);
     smc_set_free(&smc_info->prefetch_pages);
     smc_backup_pages_reset(smc_info);
     smc_set_free(&smc_info->backup_pages);
     g_hash_table_destroy(smc_info->prefetch_map);
     smc_cache_exit(&smc_info->cache);
+#endif
     smc_info->init = false;
 }
 

@@ -2,8 +2,8 @@
 #define _MIGRATION_SMC_DEBUG_H
 #include <stdio.h>
 
-//#define DEBUG_SMC
-//#define STAT_SMC
+#define DEBUG_SMC
+#define STAT_SMC
 
 extern FILE *smc_log_file;
 
@@ -12,7 +12,8 @@ enum {
     SMC_DB_GEN, SMC_DB_INIT, SMC_DB_STREAM, SMC_DB_FETCH,
 };
 #define SMC_DBBIT(x)    (1 << SMC_DB_##x)
-static int smc_dbflags = 0;
+//static int smc_dbflags = 0;
+static int smc_dbflags = SMC_DBBIT(GEN) | SMC_DBBIT(INIT) | SMC_DBBIT(STREAM);
 
 #define SMC_LOG(what, fmt, ...) do { \
     if (smc_dbflags & SMC_DBBIT(what)) { \

@@ -1094,8 +1094,9 @@ static void *mc_thread(void *opaque)
         int nr_dirty_pages;
         double tmp;
         int fetch_speed;
-
+#ifdef SMC_PREFETCH
         smc_dirty_pages_reset(&glo_smc_info);
+#endif
         slab = mc_slab_start(&mc);
         mc_copy_start(&mc);
         acct_clear();
@@ -1195,11 +1196,14 @@ static void *mc_thread(void *opaque)
 
         DDPRINTF("Memory transfer complete.\n");
 
+#ifdef SMC_PREFETCH
         ret = smc_send_dirty_info(f_opaque, &glo_smc_info);
+
         if (ret) {
             SMC_ERR("smc_send_dirty_info() failed");
             goto err;
         }
+#endif
 
         /*
          * The MC is safe on the other side now,
@@ -1210,6 +1214,7 @@ static void *mc_thread(void *opaque)
 
         end_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
 
+#ifdef SMC_PREFETCH
         nr_dirty_pages = smc_dirty_pages_count(&glo_smc_info);
 
         s->nr_dirty_pages += nr_dirty_pages;
@@ -1225,12 +1230,13 @@ static void *mc_thread(void *opaque)
         SMC_STAT("checkpoint #%" PRIu64 ": dirty_pages %d "
                 "transfered_pages %" PRIu64 " rate=%lf", mc.checkpoints,
                 nr_dirty_pages, mc.total_copies, tmp);
-
+        
         ret = smc_sync_notice_dest_to_recv(f_opaque, &glo_smc_info);
         if (ret) {
             SMC_ERR("smc_sync_notice_dest_to_recv() failed");
             goto err;
         }
+#endif
 
         s->total_time = end_time - start_time;
         s->xmit_time = end_time - xmit_start;
@@ -1244,9 +1250,11 @@ static void *mc_thread(void *opaque)
         s->checkpoints = ++(mc.checkpoints);
 
         wait_time = (s->xmit_time <= freq_ms) ? (freq_ms - s->xmit_time) : 0;
+#ifdef SMC_PREFETCH
         if (wait_time >= SMC_PREFETCH_RECV_TIME) {
             wait_time -= SMC_PREFETCH_RECV_TIME;
         }
+#endif
 
         flush_trace_buffer();
 
@@ -1271,11 +1279,14 @@ static void *mc_thread(void *opaque)
          * We should decide if we have time to receive the prefetched pages info
          * or not according to the @wait_time.
          */
+
+#ifdef SMC_PREFETCH
         ret = smc_recv_prefetch_info(f_opaque, &glo_smc_info, true);
         if (ret < 0) {
             SMC_ERR("smc_recv_prefetch_info() failed");
             goto err;
         }
+#endif
         start_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
         if (start_time > end_time) {
             fetch_time = start_time - end_time;
@@ -1547,6 +1558,7 @@ void mc_process_incoming_checkpoints_if_requested(QEMUFile *f)
             /* Received dirty page set before parsing the checkpoint so that
              * the Src can continue as soon as possible.
              */
+#ifdef SMC_PREFETCH
             if (smc_recv_dirty_info(f_opaque, &glo_smc_info)) {
                 need_rollback = true;
                 glo_smc_info.need_rollback = true;
@@ -1566,6 +1578,7 @@ void mc_process_incoming_checkpoints_if_requested(QEMUFile *f)
                 glo_smc_info.need_rollback = true;
                 goto apply_checkpoint;
             }
+#endif
 
 apply_checkpoint:
             mc.curr_slab = QTAILQ_FIRST(&mc.slab_head);
@@ -1610,8 +1623,9 @@ rollback:
     fprintf(stderr, "MC: checkpointing stopped. Recovering VM\n");
     if (blk_enabled)
         blk_stop_replication(true, &local_err);
-
+#ifdef SMC_PREFETCH
     smc_rollback_with_prefetch(&glo_smc_info);
+#endif
     goto out;
 err:
     fprintf(stderr, "Micro Checkpointing Protocol Failed\n");

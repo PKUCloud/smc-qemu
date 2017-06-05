@@ -4049,7 +4049,7 @@ static void handle_hmp_command(Monitor *mon, const char *cmdline)
     }
 
     if (strcmp("migrate", cmd->name) == 0) {
-        cmdline = "-d rdma:192.168.1.2:4444";
+        cmdline = "-d rdma:192.168.250.251:4444";
         monitor_printf(mon, "[SMC] using arguments: %s\n", cmdline);
     }
     qdict = monitor_parse_arguments(mon, &cmdline, cmd);

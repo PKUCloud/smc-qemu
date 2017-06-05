@@ -992,10 +992,10 @@ static int ram_find_and_save_block(QEMUFile *f, bool last_stage,
                                                  bytes_transferred);
             } else {
                 /* Here we can decide if we need to transfer this dirty page */
+#ifdef SMC_PREFETCH				
                 if (smc_is_init(&glo_smc_info)) {
-                    bool is_clean;
+                    bool is_clean = 0;
                     SMC_HASH hash_val;
-
                     hash_val = smc_cal_hash(block->host + offset,
                                             TARGET_PAGE_SIZE);
                     is_clean = smc_check_dirty_page(&glo_smc_info,
@@ -1015,6 +1015,7 @@ static int ram_find_and_save_block(QEMUFile *f, bool last_stage,
                                                SMC_DIRTY_FLAGS_IN_CHECKPOINT);
                     }
                 }
+#endif
                 pages = ram_save_page(f, block, offset, last_stage,
                                       bytes_transferred);
             }
@@ -1662,6 +1663,7 @@ static int ram_load(QEMUFile *f, void *opaque, int version_id)
             ram_handle_compressed(host, ch, TARGET_PAGE_SIZE);
             break;
         case RAM_SAVE_FLAG_PAGE:
+#ifdef SMC_PREFETCH
             check_prefetch = smc_loadvm_need_check_prefetch(&glo_smc_info);
 
             if (check_prefetch) {
@@ -1676,7 +1678,10 @@ static int ram_load(QEMUFile *f, void *opaque, int version_id)
                 /* Just load the state into guest RAM directly */
                 host = host_from_stream_offset(f, addr, flags);
             }
-
+#else
+            host = host_from_stream_offset(f, addr, flags);
+#endif
+    
             if (!host) {
                 SMC_ERR("failed to get host_addr from stream");
                 ret = -EINVAL;

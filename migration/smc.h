@@ -7,7 +7,7 @@
 #include "smc-cache.h"
 
 //#define SMC_PREFETCH
-//#define SMC_PML_PREFETCH
+#define SMC_PML_PREFETCH
 
 #define SMC_DIRTY_FLAGS_IN_CHECKPOINT   0x1U
 
@@ -31,6 +31,13 @@ typedef struct SMCSet {
     int nb_eles;    /* Current number of the struct @eles holds */
     int ele_size;   /* sizeof(struct) */
 } SMCSet;
+
+/* Maintain an array of SMCSet */
+typedef struct SMCSuperSet {
+    uint8_t *subsets;      /* An array of SMCSet */
+    int cap;            /* Total number of the SMCSet that  @subsets can hold */
+    int nb_subsets; /* Current number of the SMCSet that @subsets holds */
+} SMCSuperSet;
 
 #define SMC_JHASH_INIT_VAL  1824115964UL
 typedef uint32_t    SMC_HASH;

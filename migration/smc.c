@@ -8,7 +8,8 @@
 #include "smc-debug.h"
 #include "jhash.h"
 
-#define SMC_SET_INIT_CAP    409600
+#define SMC_SET_INIT_CAP        40960
+#define SMC_SUPERSET_INIT_CAP   10
 
 SMCInfo glo_smc_info;
 
@@ -23,6 +24,22 @@ static void smc_set_init(SMCSet *smc_set, int ele_size)
     smc_set->nb_eles = 0;
 }
 
+static void smc_superset_init(SMCSuperSet *smc_superset, 
+                                int subset_ele_size)
+{
+    int i;
+    SMCSet *subset;
+    
+    smc_superset->cap = SMC_SUPERSET_INIT_CAP;
+    smc_superset->nb_subsets = 0;
+    smc_superset->subsets = (uint8_t *)g_malloc0(smc_superset->cap *
+                                sizeof(SMCSet));
+    for (i = 0; i < smc_superset->cap; i++) {
+        subset = (SMCSet *)(smc_superset->subsets + i * sizeof(SMCSet));
+        smc_set_init(subset, subset_ele_size);
+    }    
+}
+
 static void smc_set_free(SMCSet *smc_set)
 {
     if (smc_set->eles) {
@@ -32,9 +49,40 @@ static void smc_set_free(SMCSet *smc_set)
     smc_set->cap = smc_set->nb_eles = smc_set->ele_size = 0;
 }
 
+static void smc_superset_free(SMCSuperSet *smc_superset)
+{
+    SMCSet *subset;
+    
+    while (smc_superset->nb_subsets > 0) {
+        subset = (SMCSet *) (smc_superset->subsets + 
+                 (smc_superset->nb_subsets - 1) * sizeof(SMCSet));
+        if (subset)
+            smc_set_free(subset);
+        smc_superset->nb_subsets--;
+    }
+    if (smc_superset->subsets) {
+        g_free(smc_superset->subsets);
+    }
+    smc_superset->cap = 0;
+}
+
 static void smc_set_reset(SMCSet *smc_set)
 {
     smc_set->nb_eles = 0;
+}
+
+static void smc_superset_reset(SMCSuperSet *smc_superset)
+{
+    SMCSet *subset;
+    
+    while (smc_superset->nb_subsets > 0) {
+        subset = (SMCSet *) (smc_superset->subsets + 
+                 (smc_superset->nb_subsets - 1) * sizeof(SMCSet));
+        if (subset) {
+            smc_set_reset(subset);
+        }
+        smc_superset->nb_subsets--;
+    }
 }
 
 static void smc_set_resize(SMCSet *smc_set, int new_cap)
@@ -53,6 +101,40 @@ static void smc_set_resize(SMCSet *smc_set, int new_cap)
     smc_set->nb_eles = min(smc_set->nb_eles, new_cap);
 }
 
+static void smc_superset_resize(SMCSuperSet *smc_superset, int new_cap)
+{
+    uint8_t *data;
+    SMCSet *old_subset, *new_subset;
+    int i;
+    
+    SMC_ASSERT(new_cap > smc_superset->cap);
+    data = (uint8_t *)g_malloc0(new_cap * sizeof(SMCSet));
+    for (i = 0; i < new_cap; i++) {
+        new_subset = (SMCSet *)(data + i * sizeof(SMCSet));
+        smc_set_init(new_subset, old_subset->ele_size);
+        if (i < smc_superset->nb_subsets) {
+            old_subset = (SMCSet *)(smc_superset->subsets + i * sizeof(SMCSet));
+            if (old_subset->cap > new_subset->cap) {
+                smc_set_resize(new_subset, old_subset->cap);
+            }
+            memcpy(new_subset->eles, old_subset->eles, 
+                  old_subset->nb_eles * old_subset->ele_size);
+            new_subset->ele_size = old_subset->ele_size;
+            new_subset->nb_eles = old_subset->nb_eles;
+        }
+    }
+    smc_superset->cap = new_cap;
+    smc_superset->subsets = data;
+}
+
+static void *smc_superset_get_idex(SMCSuperSet *smc_superset, 
+                                        int idx)
+{
+    if (idx > smc_superset->nb_subsets || idx < 0) {
+        return NULL;
+    }
+    return smc_superset->subsets + idx * sizeof(SMCSet);
+}
 static void *smc_set_insert(SMCSet *smc_set, const void *ele)
 {
     uint8_t *new_ele;
@@ -68,6 +150,15 @@ static void *smc_set_insert(SMCSet *smc_set, const void *ele)
     return new_ele;
 }
 
+static void *smc_superset_insert(SMCSuperSet *smc_superset,
+                                    int subset_idx, const void *ele)
+{
+    SMCSet *subset;
+
+    subset = smc_superset_get_idex(smc_superset, subset_idx);
+    return smc_set_insert(subset, ele);
+}
+
 static void *smc_set_get_idx(SMCSet *smc_set, int idx)
 {
     if (idx >= smc_set->nb_eles || idx < 0) {
@@ -75,7 +166,6 @@ static void *smc_set_get_idx(SMCSet *smc_set, int idx)
     }
     return smc_set->eles + idx * smc_set->ele_size;
 }
-
 static void smc_set_insert_from_buf(SMCSet *smc_set, const void *buf,
                                     int nb_eles)
 {
@@ -92,6 +182,16 @@ static void smc_set_insert_from_buf(SMCSet *smc_set, const void *buf,
            nb_eles * smc_set->ele_size);
     smc_set->nb_eles += nb_eles;
 }
+
+static void smc_superset_insert_from_buf(SMCSuperSet *smc_superset,
+                                    int subset_idx, const void *buf, int nb_eles)
+{
+    SMCSet *subset;
+
+    subset = smc_superset_get_idex(smc_superset, subset_idx);
+    smc_set_insert_from_buf(subset, buf, nb_eles);
+}
+
 
 void smc_init(SMCInfo *smc_info, void *opaque)
 {

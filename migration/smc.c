@@ -53,17 +53,17 @@ static void smc_superset_free(SMCSuperSet *smc_superset)
 {
     SMCSet *subset;
     
-    while (smc_superset->nb_subsets > 0) {
+    while (smc_superset->cap > 0) {
         subset = (SMCSet *) (smc_superset->subsets + 
-                 (smc_superset->nb_subsets - 1) * sizeof(SMCSet));
+                 (smc_superset->cap - 1) * sizeof(SMCSet));
         if (subset)
             smc_set_free(subset);
-        smc_superset->nb_subsets--;
+        smc_superset->cap--;
     }
     if (smc_superset->subsets) {
         g_free(smc_superset->subsets);
     }
-    smc_superset->cap = 0;
+    smc_superset->nb_subsets = 0;
 }
 
 static void smc_set_reset(SMCSet *smc_set)
@@ -75,9 +75,9 @@ static void smc_superset_reset(SMCSuperSet *smc_superset)
 {
     SMCSet *subset;
     
-    while (smc_superset->nb_subsets > 0) {
+    while (smc_superset->nb_subsets >= 0) {
         subset = (SMCSet *) (smc_superset->subsets + 
-                 (smc_superset->nb_subsets - 1) * sizeof(SMCSet));
+                 smc_superset->nb_subsets * sizeof(SMCSet));
         if (subset) {
             smc_set_reset(subset);
         }
@@ -146,6 +146,7 @@ static void *smc_set_insert(SMCSet *smc_set, const void *ele)
     new_ele = smc_set->eles + smc_set->nb_eles * smc_set->ele_size;
     memcpy(new_ele, ele, smc_set->ele_size);
     smc_set->nb_eles++;
+    SMC_LOG(PML, "insert %d pages", smc_set->nb_eles);
 
     return new_ele;
 }
@@ -238,6 +239,23 @@ void smc_dirty_pages_insert(SMCInfo *smc_info, uint64_t block_offset,
             " size=%" PRIu32 " flags=%" PRIu32, block_offset, offset, size,
             flags);
     smc_set_insert(&smc_info->dirty_pages, &page);
+}
+
+void smc_pml_prefetch_pages_insert(SMCInfo *smc_info, 
+                                            uint64_t block_offset,
+                                            uint64_t offset, uint32_t size)
+{
+    SMCPMLPrefetchPage page = { .block_offset = block_offset,
+                                .offset = offset,
+                                .size = size,
+                              };
+    
+    SMC_ASSERT(smc_info->init);
+    SMC_LOG(PML, "add SMCPMLPrefetchPage which block_offset=%" PRIu64 " offset=%"
+            PRIu64 " size=%" PRIu32, block_offset, offset, size);
+    
+    smc_superset_insert(&smc_info->pml_prefetch_pages, 
+                        smc_info->pml_prefetch_pages.nb_subsets, &page);
 }
 
 void smc_dirty_pages_reset(SMCInfo *smc_info)

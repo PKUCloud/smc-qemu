@@ -757,6 +757,47 @@ void qemu_savevm_state_begin(QEMUFile *f,
     }
 }
 
+void qemu_prefetch_state_begin(QEMUFile *f)
+{
+    SaveStateEntry *se;
+    int ret;
+
+    SMC_LOG(PML, "start to capture dirty pages from KVM");
+    QTAILQ_FOREACH(se, &savevm_state.handlers, entry) {
+        if (!se->ops || !se->ops->prefetch_live_setup) {
+            continue;
+        }
+        SMC_LOG(PML, "handling se:%s", se->idstr);
+        ret = se->ops->prefetch_live_setup(f, se->opaque);
+        if (ret < 0) {
+            SMC_LOG(GEN, "error: idstr=%s return %d", se->idstr, ret);
+            qemu_file_set_error(f, ret);
+            break;
+        }
+    }
+}
+
+void qemu_prefetch_state_complete(QEMUFile *f)
+{
+    SaveStateEntry *se;
+    int ret;
+
+    SMC_LOG(PML, "start to synchronize dirty pages to bitmap");
+    QTAILQ_FOREACH(se, &savevm_state.handlers, entry) {
+        if (!se->ops || !se->ops->prefetch_live_complete) {
+            continue;
+        }
+        SMC_LOG(PML, "handling se:%s", se->idstr);
+        ret = se->ops->prefetch_live_complete(f, se->opaque);
+        if (ret < 0) {
+            SMC_LOG(GEN, "error: idstr=%s return %d", se->idstr, ret);
+            qemu_file_set_error(f, ret);
+            break;
+        }
+    }
+}
+
+
 /*
  * this function has three return values:
  *   negative: there was one error, and we have -errno.

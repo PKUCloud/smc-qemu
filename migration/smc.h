@@ -24,6 +24,15 @@ typedef struct SMCDirtyPage {
     uint32_t flags;
 } SMCDirtyPage;
 
+/* Info about a dirty page got from a PML sync */
+typedef struct SMCPMLPrefetchPage {
+    /* Offset of the RAMBlock which contains the page */
+    uint64_t block_offset;
+    /* Offset inside the RAMBlock which contains the page */
+    uint64_t offset;
+    uint32_t size;
+} SMCPMLPrefetchPage;
+
 /* Maintain an array of a struct */
 typedef struct SMCSet {
     uint8_t *eles;     /* An array of a struct */
@@ -78,6 +87,7 @@ typedef struct SMCInfo {
      * [page_physical_addr] -> the pointer of the corresponding SMCFetchPage
      */
     GHashTable *prefetch_map;
+    SMCSuperSet pml_prefetch_pages;
     int state;
     bool need_rollback;
     void *opaque;   /* QEMUFileRDMA */
@@ -91,6 +101,9 @@ void smc_init(SMCInfo *smc_info, void *opaque);
 void smc_exit(SMCInfo *smc_info);
 void smc_dirty_pages_insert(SMCInfo *smc_info, uint64_t block_offset,
                             uint64_t offset, uint32_t size, uint32_t flags);
+void smc_pml_prefetch_pages_insert(SMCInfo *smc_info, 
+                                            uint64_t block_offset,
+                                            uint64_t offset, uint32_t size);
 void smc_dirty_pages_reset(SMCInfo *smc_info);
 void smc_dirty_pages_insert_from_buf(SMCInfo *smc_info, const void *buf,
                                      int nb_pages);

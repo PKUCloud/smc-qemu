@@ -240,7 +240,9 @@ static ram_addr_t last_offset;
 static unsigned long *migration_bitmap;
 static uint64_t migration_dirty_pages;
 static uint32_t last_version;
-static bool ram_bulk_stage;
+static bool ram_bulk_stage; 
+static unsigned long *smc_pml_prefetch_bitmap;
+static uint64_t smc_pml_prefetch_pages;
 
 struct CompressParam {
     bool start;
@@ -535,11 +537,39 @@ ram_addr_t migration_bitmap_find_and_reset_dirty(MemoryRegion *mr,
     return (next - base) << TARGET_PAGE_BITS;
 }
 
+static inline
+ram_addr_t smc_pml_prefetch_bitmap_find_and_reset_dirty(MemoryRegion *mr,
+                                                 ram_addr_t start)
+{
+    unsigned long base = mr->ram_addr >> TARGET_PAGE_BITS;
+    unsigned long nr = base + (start >> TARGET_PAGE_BITS);
+    uint64_t mr_size = TARGET_PAGE_ALIGN(memory_region_size(mr));
+    unsigned long size = base + (mr_size >> TARGET_PAGE_BITS);
+
+    unsigned long next;
+
+    next = find_next_bit(smc_pml_prefetch_bitmap, size, nr);
+    if (next < size) {
+        clear_bit(next, smc_pml_prefetch_bitmap);
+        smc_pml_prefetch_pages--;
+    }
+    return (next - base) << TARGET_PAGE_BITS;
+}
+
+
 static void migration_bitmap_sync_range(ram_addr_t start, ram_addr_t length)
 {
     migration_dirty_pages +=
         cpu_physical_memory_sync_dirty_bitmap(migration_bitmap, start, length);
 }
+
+static void smc_pml_prefetch_bitmap_sync_range(ram_addr_t start,
+                                                            ram_addr_t length)
+{
+    smc_pml_prefetch_pages +=
+        cpu_physical_memory_sync_dirty_bitmap(smc_pml_prefetch_bitmap, start, length);
+}
+
 
 
 /* Fix me: there are too many global variables used in migration process. */
@@ -1034,6 +1064,59 @@ static int ram_find_and_save_block(QEMUFile *f, bool last_stage,
     return pages;
 }
 
+static void smc_pml_ram_find_and_prefetch_block(void)	
+{
+    RAMBlock *block;
+    ram_addr_t offset;
+    MemoryRegion *mr;
+
+    block = QLIST_FIRST_RCU(&ram_list.blocks);
+	offset = 0;
+
+    SMC_LOG(PML, "Start to find and insert prefetch pages into pml_prefetch_pages "
+            "pml_prefetch_pages.nb_subsets=%d", glo_smc_info.pml_prefetch_pages.nb_subsets);
+
+    while (true) {
+        mr = block->mr;
+        offset = smc_pml_prefetch_bitmap_find_and_reset_dirty(mr, offset);
+        if (offset >= block->used_length) {
+            offset = 0;
+            block = QLIST_NEXT_RCU(block, next);
+            if (!block) {
+                break;
+            }
+		} else {
+		    smc_pml_prefetch_pages_insert(&glo_smc_info, block->offset, offset,
+                                          TARGET_PAGE_SIZE);
+        }    
+    }
+}	
+
+/* Called with iothread lock held, to protect ram_list.dirty_memory[] */
+static void smc_pml_prefetch_kvm_bitmap_sync(void)
+{
+    SMC_LOG(PML, "capture dirty pages from KVM by ioctl");
+    address_space_sync_dirty_bitmap(&address_space_memory);
+}
+
+static void smc_pml_prefetch_qemu_bitmap_sync(void)
+{
+    RAMBlock *block;
+    smc_pml_prefetch_pages = 0;
+
+    SMC_LOG(PML, "Synchronize the dirty bitmap into Qemu");
+    rcu_read_lock();
+    QLIST_FOREACH_RCU(block, &ram_list.blocks, next) {
+        smc_pml_prefetch_bitmap_sync_range(block->mr->ram_addr, block->used_length);
+    }
+    rcu_read_unlock();
+    SMC_LOG(PML, "Get %" PRIu64 "dirty pages in total", smc_pml_prefetch_pages);
+
+    smc_pml_ram_find_and_prefetch_block();
+    SMC_LOG(PML, "After synchronization the smc_pml_prefetch_pages should be 0,"
+            "and the actual value is %" PRIu64, smc_pml_prefetch_pages);
+}
+
 void acct_update_position(QEMUFile *f, size_t size, bool zero)
 {
     uint64_t pages = size / TARGET_PAGE_SIZE;
@@ -1086,6 +1169,13 @@ static void migration_end(void)
         g_free(migration_bitmap);
         migration_bitmap = NULL;
     }
+
+#ifdef SMC_PML_PREFETCH
+    if (smc_pml_prefetch_bitmap) {
+        g_free(smc_pml_prefetch_bitmap);
+        smc_pml_prefetch_bitmap = NULL;
+    }
+#endif
 
     XBZRLE_cache_lock();
     if (XBZRLE.cache) {
@@ -1187,6 +1277,13 @@ static int ram_save_setup(QEMUFile *f, void *opaque)
     migration_bitmap = bitmap_new(ram_bitmap_pages);
     bitmap_set(migration_bitmap, 0, ram_bitmap_pages);
 
+#ifdef SMC_PML_PREFETCH
+    //init PML prefetch bitmap:
+    smc_pml_prefetch_bitmap = bitmap_new(ram_bitmap_pages);
+    bitmap_set(smc_pml_prefetch_bitmap, 0, ram_bitmap_pages);
+    smc_pml_prefetch_pages = 0;
+#endif
+
     /*
      * Count the total number of pages used by ram blocks not including any
      * gaps due to alignment or unplugs.
@@ -1218,6 +1315,13 @@ skip_setup:
 
     qemu_put_be64(f, RAM_SAVE_FLAG_EOS);
 
+    return 0;
+}
+
+/* Called with iothread lock */
+static int ram_prefetch_setup(QEMUFile *f, void *opaque)
+{
+    smc_pml_prefetch_kvm_bitmap_sync();
     return 0;
 }
 
@@ -1323,6 +1427,12 @@ static int ram_save_complete(QEMUFile *f, void *opaque)
     rcu_read_unlock();
     qemu_put_be64(f, RAM_SAVE_FLAG_EOS);
 
+    return 0;
+}
+
+static int ram_prefetch_complete(QEMUFile *f, void *opaque)
+{
+    smc_pml_prefetch_qemu_bitmap_sync();
     return 0;
 }
 
@@ -1753,6 +1863,8 @@ static SaveVMHandlers savevm_ram_handlers = {
     .save_live_iterate = ram_save_iterate,
     .save_live_complete = ram_save_complete,
     .save_live_pending = ram_save_pending,
+    .prefetch_live_setup = ram_prefetch_setup,
+    .prefetch_live_complete = ram_prefetch_complete,
     .load_state = ram_load,
     .cancel = ram_migration_cancel,
 };

@@ -791,6 +791,25 @@ out:
 }
 
 /*
+ * Stop the VM, capture the dirty pages from KVM,
+ * then synchronise the dirty bitmap to ,
+ * re-activate the VM as soon as possible,
+ * 
+ */
+static int smc_pml_capture_dirty_pages(MCParams *mc, MigrationState *s)
+{
+    SMC_LOG(PML, "stop the VM and then capture dirty pages");
+    qemu_mutex_lock_iothread();
+    vm_stop_force_state(RUN_STATE_CHECKPOINTING);
+    qemu_prefetch_state_begin(mc->staging);
+    vm_start();
+    qemu_mutex_unlock_iothread();
+    //let VM go as soon as possible
+    qemu_prefetch_state_complete(mc->staging);
+}
+
+
+/*
  * Synchronously send a micro-checkpointing command
  */
 static int mc_send(QEMUFile *f, uint64_t request)

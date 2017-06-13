@@ -52,18 +52,20 @@ static void smc_set_free(SMCSet *smc_set)
 static void smc_superset_free(SMCSuperSet *smc_superset)
 {
     SMCSet *subset;
+    int i;
     
-    while (smc_superset->cap > 0) {
+    for (i = 0; i < smc_superset->cap; i++) {
         subset = (SMCSet *) (smc_superset->subsets + 
-                 (smc_superset->cap - 1) * sizeof(SMCSet));
-        if (subset)
+                 i * sizeof(SMCSet));
+        if (subset) {
             smc_set_free(subset);
-        smc_superset->cap--;
+        }
     }
     if (smc_superset->subsets) {
         g_free(smc_superset->subsets);
     }
     smc_superset->nb_subsets = 0;
+    smc_superset->cap = 0;
 }
 
 static void smc_set_reset(SMCSet *smc_set)
@@ -74,15 +76,16 @@ static void smc_set_reset(SMCSet *smc_set)
 static void smc_superset_reset(SMCSuperSet *smc_superset)
 {
     SMCSet *subset;
+    int i;
     
-    while (smc_superset->nb_subsets >= 0) {
+    for (i = 0; i < smc_superset->cap; i++) {
         subset = (SMCSet *) (smc_superset->subsets + 
-                 smc_superset->nb_subsets * sizeof(SMCSet));
+                 i * sizeof(SMCSet));
         if (subset) {
             smc_set_reset(subset);
         }
-        smc_superset->nb_subsets--;
     }
+    smc_superset->nb_subsets = 0;
 }
 
 static void smc_set_resize(SMCSet *smc_set, int new_cap)
@@ -111,6 +114,7 @@ static void smc_superset_resize(SMCSuperSet *smc_superset, int new_cap)
     data = (uint8_t *)g_malloc0(new_cap * sizeof(SMCSet));
     for (i = 0; i < new_cap; i++) {
         new_subset = (SMCSet *)(data + i * sizeof(SMCSet));
+        old_subset = (SMCSet *)(smc_superset->subsets);
         smc_set_init(new_subset, old_subset->ele_size);
         if (i < smc_superset->nb_subsets) {
             old_subset = (SMCSet *)(smc_superset->subsets + i * sizeof(SMCSet));
@@ -146,7 +150,7 @@ static void *smc_set_insert(SMCSet *smc_set, const void *ele)
     new_ele = smc_set->eles + smc_set->nb_eles * smc_set->ele_size;
     memcpy(new_ele, ele, smc_set->ele_size);
     smc_set->nb_eles++;
-    SMC_LOG(PML, "insert %d pages", smc_set->nb_eles);
+    SMC_LOG(PML, "after insert, there are %d pages in total", smc_set->nb_eles);
 
     return new_ele;
 }
@@ -206,6 +210,9 @@ void smc_init(SMCInfo *smc_info, void *opaque)
     smc_info->prefetch_map = g_hash_table_new(g_direct_hash, g_direct_equal);
     smc_cache_init(&smc_info->cache);
 #endif
+#ifdef SMC_PML_PREFETCH
+    smc_superset_init(&smc_info->pml_prefetch_pages, sizeof(SMCPMLPrefetchPage));
+#endif
     smc_info->opaque = opaque;
     smc_info->init = true;
 }
@@ -221,6 +228,9 @@ void smc_exit(SMCInfo *smc_info)
     smc_set_free(&smc_info->backup_pages);
     g_hash_table_destroy(smc_info->prefetch_map);
     smc_cache_exit(&smc_info->cache);
+#endif
+#ifdef SMC_PML_PREFETCH
+    smc_superset_free(&smc_info->pml_prefetch_pages);
 #endif
     smc_info->init = false;
 }
@@ -265,6 +275,14 @@ void smc_dirty_pages_reset(SMCInfo *smc_info)
     smc_set_reset(&smc_info->dirty_pages);
 }
 
+void smc_pml_prefetch_pages_reset(SMCInfo *smc_info)
+{
+    SMC_ASSERT(smc_info->init);
+    smc_superset_reset(&smc_info->pml_prefetch_pages);
+    SMC_LOG(GEN, "after reset pml_prefetch_pages subset=%d", 
+                smc_info->pml_prefetch_pages.nb_subsets);
+}
+
 void smc_dirty_pages_insert_from_buf(SMCInfo *smc_info, const void *buf,
                                      int nb_pages)
 {
@@ -301,9 +319,23 @@ SMCFetchPage *smc_prefetch_pages_insert(SMCInfo *smc_info,
 
 void smc_prefetch_pages_reset(SMCInfo *smc_info)
 {
-    SMC_LOG(GEN, "prefetch_pages=%d", smc_info->prefetch_pages.nb_eles);
+    SMC_LOG(GEN, "prefetch_pages subset=%d", smc_info->prefetch_pages.nb_eles);
     SMC_ASSERT(smc_info->init);
     smc_set_reset(&smc_info->prefetch_pages);
+}
+
+void smc_pml_prefetch_pages_next_subset(SMCInfo *smc_info)
+{
+    SMC_LOG(GEN, "prefetch_pages subset=%d", 
+            smc_info->pml_prefetch_pages.nb_subsets);
+    SMC_ASSERT(smc_info->init);
+    smc_info->pml_prefetch_pages.nb_subsets++;
+    if (smc_info->pml_prefetch_pages.nb_subsets >= smc_info->pml_prefetch_pages.cap) {
+        smc_superset_resize(&smc_info->pml_prefetch_pages, 
+                            smc_info->pml_prefetch_pages.nb_subsets + 1);
+    }
+    SMC_LOG(GEN, "prefetch_pages new subset=%d", 
+            smc_info->pml_prefetch_pages.nb_subsets);
 }
 
 void smc_backup_pages_reset(SMCInfo *smc_info)

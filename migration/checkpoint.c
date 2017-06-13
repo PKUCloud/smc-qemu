@@ -796,7 +796,7 @@ out:
  * re-activate the VM as soon as possible,
  * 
  */
-static int smc_pml_capture_dirty_pages(MCParams *mc, MigrationState *s)
+static void smc_pml_capture_dirty_pages(MCParams *mc, MigrationState *s)
 {
     SMC_LOG(PML, "stop the VM and then capture dirty pages");
     qemu_mutex_lock_iothread();
@@ -1116,6 +1116,9 @@ static void *mc_thread(void *opaque)
 #ifdef SMC_PREFETCH
         smc_dirty_pages_reset(&glo_smc_info);
 #endif
+#ifdef SMC_PML_PREFETCH
+        smc_pml_prefetch_pages_reset(&glo_smc_info);
+#endif
         slab = mc_slab_start(&mc);
         mc_copy_start(&mc);
         acct_clear();
@@ -1255,7 +1258,7 @@ static void *mc_thread(void *opaque)
             SMC_ERR("smc_sync_notice_dest_to_recv() failed");
             goto err;
         }
-#endif
+#endif 
 
         s->total_time = end_time - start_time;
         s->xmit_time = end_time - xmit_start;
@@ -1287,12 +1290,28 @@ static void *mc_thread(void *opaque)
          * will end up diving right back into the next checkpoint
          * as soon as the previous transmission completed.
          */
+#ifdef SMC_PML_PREFETCH
+        wait_time = wait_time / 2;
+#endif
         if (wait_time) {
+            SMC_LOG(GEN, "let VM run %" PRIu64 "ms", wait_time);
             s->nr_sleeps++;
             g_usleep(wait_time * 1000);
             s->total_wait_time += wait_time;
         }
 
+#ifdef SMC_PML_PREFETCH
+        smc_pml_capture_dirty_pages(&mc,s);
+        smc_pml_prefetch_pages_next_subset(&glo_smc_info);
+#endif
+
+        if (wait_time) {
+            SMC_LOG(GEN, "after prefetch let VM run %" PRIu64 "ms", wait_time);
+            s->nr_sleeps++;
+            g_usleep(wait_time * 1000);
+            s->total_wait_time += wait_time;
+        }
+        
         /* TODO: Maybe we should decrease the @wait_time to sleep to get time
          * for receiving the prefetched info.
          * We should decide if we have time to receive the prefetched pages info
@@ -1316,6 +1335,12 @@ static void *mc_thread(void *opaque)
         } else {
             fetch_time = 0;
         }
+        SMC_LOG(GEN, "[SMC]bytes %ld xmit_time %" PRId64 " downtime %" PRIu64
+                " ram_copy_time %" PRId64 " wait_time %" PRIu64
+                " fetch_speed %d fetch_time %" PRId64
+                " checkpoints %" PRId64 "\n",
+                s->bytes_xfer, s->xmit_time, s->downtime, s->ram_copy_time,
+                wait_time, fetch_speed, fetch_time, s->checkpoints);
 
         if (end_time >= initial_time + 1000) {
             printf("[SMC]bytes %ld xmit_time %" PRId64 " downtime %" PRIu64

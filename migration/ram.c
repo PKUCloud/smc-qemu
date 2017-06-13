@@ -622,6 +622,11 @@ static void migration_bitmap_sync(void)
     }
     rcu_read_unlock();
 
+#ifdef SMC_PML_PREFETCH
+    SMC_LOG(PML, "This checkpoint has %" PRIu64 " dirty pages in toatl",
+            migration_dirty_pages);
+#endif
+
     trace_migration_bitmap_sync_end(migration_dirty_pages
                                     - num_dirty_pages_init);
     num_dirty_pages_period += migration_dirty_pages - num_dirty_pages_init;
@@ -1071,7 +1076,7 @@ static void smc_pml_ram_find_and_prefetch_block(void)
     MemoryRegion *mr;
 
     block = QLIST_FIRST_RCU(&ram_list.blocks);
-	offset = 0;
+    offset = 0;
 
     SMC_LOG(PML, "Start to find and insert prefetch pages into pml_prefetch_pages "
             "pml_prefetch_pages.nb_subsets=%d", glo_smc_info.pml_prefetch_pages.nb_subsets);
@@ -1085,8 +1090,8 @@ static void smc_pml_ram_find_and_prefetch_block(void)
             if (!block) {
                 break;
             }
-		} else {
-		    smc_pml_prefetch_pages_insert(&glo_smc_info, block->offset, offset,
+        } else {
+            smc_pml_prefetch_pages_insert(&glo_smc_info, block->offset, offset,
                                           TARGET_PAGE_SIZE);
         }    
     }
@@ -1110,7 +1115,7 @@ static void smc_pml_prefetch_qemu_bitmap_sync(void)
         smc_pml_prefetch_bitmap_sync_range(block->mr->ram_addr, block->used_length);
     }
     rcu_read_unlock();
-    SMC_LOG(PML, "Get %" PRIu64 "dirty pages in total", smc_pml_prefetch_pages);
+    SMC_LOG(PML, "Get %" PRIu64 " dirty pages in total", smc_pml_prefetch_pages);
 
     smc_pml_ram_find_and_prefetch_block();
     SMC_LOG(PML, "After synchronization the smc_pml_prefetch_pages should be 0,"
@@ -1278,9 +1283,9 @@ static int ram_save_setup(QEMUFile *f, void *opaque)
     bitmap_set(migration_bitmap, 0, ram_bitmap_pages);
 
 #ifdef SMC_PML_PREFETCH
-    //init PML prefetch bitmap:
+    //init PML prefetch bitmap: init an empty bitmap:
     smc_pml_prefetch_bitmap = bitmap_new(ram_bitmap_pages);
-    bitmap_set(smc_pml_prefetch_bitmap, 0, ram_bitmap_pages);
+    bitmap_clear(smc_pml_prefetch_bitmap, 0, ram_bitmap_pages);
     smc_pml_prefetch_pages = 0;
 #endif
 

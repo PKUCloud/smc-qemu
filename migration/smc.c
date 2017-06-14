@@ -160,7 +160,7 @@ static void *smc_superset_insert(SMCSuperSet *smc_superset,
 {
     SMCSet *subset;
 
-    subset = smc_superset_get_idex(smc_superset, subset_idx);
+    subset = (SMCSet *)smc_superset_get_idex(smc_superset, subset_idx);
     return smc_set_insert(subset, ele);
 }
 
@@ -193,7 +193,7 @@ static void smc_superset_insert_from_buf(SMCSuperSet *smc_superset,
 {
     SMCSet *subset;
 
-    subset = smc_superset_get_idex(smc_superset, subset_idx);
+    subset = (SMCSet *)smc_superset_get_idex(smc_superset, subset_idx);
     smc_set_insert_from_buf(subset, buf, nb_eles);
 }
 
@@ -291,6 +291,15 @@ void smc_dirty_pages_insert_from_buf(SMCInfo *smc_info, const void *buf,
     smc_set_insert_from_buf(&smc_info->dirty_pages, buf, nb_pages);
 }
 
+void smc_pml_prefetch_pages_insert_from_buf(SMCInfo *smc_info, 
+                                     const void *buf, int nb_pages)
+{
+    SMC_LOG(GEN, "copy %d prefetch pages info into pml_prefetch_pages", nb_pages);
+    SMC_ASSERT(smc_info->init);
+    smc_superset_insert_from_buf(&smc_info->pml_prefetch_pages, 
+                                 smc_info->pml_prefetch_pages.nb_subsets, 
+                                 buf, nb_pages);
+}
 void smc_prefetch_pages_insert_from_buf(SMCInfo *smc_info, const void *buf,
                                         int nb_pages)
 {
@@ -532,3 +541,22 @@ void smc_update_prefetch_cache(SMCInfo *smc_info)
         ++dirty_page;
     }
 }
+
+SMCPMLPrefetchPage *smc_pml_prefetch_pages_info(SMCInfo *smc_info)
+{
+    SMCSet *subset;
+
+    subset = (SMCSet *)smc_superset_get_idex(&smc_info->pml_prefetch_pages, 
+                                   smc_info->pml_prefetch_pages.nb_subsets);
+    return (SMCPMLPrefetchPage *)subset->eles;
+}
+
+int smc_pml_prefetch_pages_count(SMCInfo *smc_info)
+{
+    SMCSet *subset;
+
+    subset = (SMCSet *)smc_superset_get_idex(&smc_info->pml_prefetch_pages, 
+                                   smc_info->pml_prefetch_pages.nb_subsets);
+    return subset->nb_eles;
+}
+

@@ -106,7 +106,8 @@ void smc_pml_prefetch_pages_insert(SMCInfo *smc_info,
                                             uint64_t offset, uint32_t size);
 void smc_pml_prefetch_pages_next_subset(SMCInfo *smc_info);
 void smc_pml_prefetch_pages_reset(SMCInfo *smc_info);
-
+void smc_pml_prefetch_pages_insert_from_buf(SMCInfo *smc_info, 
+                                     const void *buf, int nb_pages);
 void smc_dirty_pages_reset(SMCInfo *smc_info);
 void smc_dirty_pages_insert_from_buf(SMCInfo *smc_info, const void *buf,
                                      int nb_pages);
@@ -119,7 +120,9 @@ void smc_prefetch_pages_insert_from_buf(SMCInfo *smc_info, const void *buf,
                                         int nb_pages);
 
 int smc_send_dirty_info(void *opaque, SMCInfo *smc_info);
+int smc_pml_send_prefetch_info(void *opaque, SMCInfo *smc_info);
 int smc_recv_dirty_info(void *opaque, SMCInfo *smc_info);
+int smc_pml_recv_prefetch_info(void *opaque, SMCInfo *smc_info);
 int smc_recv_prefetch_info(void *opaque, SMCInfo *smc_info,
                            bool request_info);
 int smc_sync_notice_dest_to_recv(void *opaque, SMCInfo *smc_info);
@@ -144,6 +147,8 @@ uint8_t *smc_host_addr_from_offset(void *opaque, uint64_t block_offset,
 void smc_prefetch_map_gen_from_pages(SMCInfo *smc_info);
 void smc_update_prefetch_cache(SMCInfo *smc_info);
 int smc_load_page_stub(QEMUFile *f, void *opaque, void *host_addr, long size);
+SMCPMLPrefetchPage *smc_pml_prefetch_pages_info(SMCInfo *smc_info);
+int smc_pml_prefetch_pages_count(SMCInfo *smc_info);
 
 static inline int smc_dirty_pages_count(SMCInfo *smc_info)
 {

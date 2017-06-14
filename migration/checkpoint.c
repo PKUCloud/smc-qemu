@@ -1303,6 +1303,7 @@ static void *mc_thread(void *opaque)
 #ifdef SMC_PML_PREFETCH
         smc_pml_capture_dirty_pages(&mc,s);
         smc_pml_prefetch_pages_next_subset(&glo_smc_info);
+        smc_pml_send_prefetch_info(f_opaque, &glo_smc_info);
 #endif
 
         if (wait_time) {
@@ -1429,7 +1430,7 @@ void mc_process_incoming_checkpoints_if_requested(QEMUFile *f)
     QEMUFile *mc_control = NULL, *mc_staging = NULL;
     uint64_t checkpoint_size = 0, action, received = 0;
     uint64_t slabs = 0;
-    int got, x, ret;
+    int got, x, ret, nb_recv_prefetch_pages;
     bool checkpoint_received = 0;
     bool blk_enabled = false;
     Error *local_err = NULL;
@@ -1622,6 +1623,13 @@ void mc_process_incoming_checkpoints_if_requested(QEMUFile *f)
                 glo_smc_info.need_rollback = true;
                 goto apply_checkpoint;
             }
+#endif
+#ifdef SMC_PML_PREFETCH
+            smc_pml_prefetch_pages_reset(&glo_smc_info);
+            nb_recv_prefetch_pages = smc_pml_recv_prefetch_info(f_opaque, 
+                                                            &glo_smc_info);
+            //
+            smc_pml_prefetch_pages_next_subset(&glo_smc_info);
 #endif
 
 apply_checkpoint:

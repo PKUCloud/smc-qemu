@@ -195,6 +195,8 @@ enum {
     SMC_RDMA_CONTROL_NO_PREFETCH_INFO,    /* Don't send prefetched pages info */
     SMC_RDMA_CONTROL_PREFETCH_INFO,   /* Send prefetched pages info */
     SMC_RDMA_CONTROL_SYNC,            /* Sync between src and dest */
+    SMC_PML_RDMA_CONTROL_PREFETCH_INFO,  /* send info of the dirty pages 
+                                                                            * that shoude be prefetch*/ 
 };
 
 static const char *control_desc[] = {
@@ -4053,6 +4055,55 @@ int smc_send_dirty_info(void *opaque, SMCInfo *smc_info)
     return 0;
 }
 
+/* Info about the prefetched dirty pages of one chunk may be too large to load 
+ * it all into one RDMA control message. We utilize the RDMAControlHeader.
+ * padding to record the total length of all the messages data.
+ */
+int smc_pml_send_prefetch_info(void *opaque, SMCInfo *smc_info)
+{
+    QEMUFileRDMA *rfile = opaque;
+    RDMAContext *rdma = rfile->rdma;
+    RDMAControlHeader head = { .type = SMC_PML_RDMA_CONTROL_PREFETCH_INFO,
+                               .repeat = 1 };   
+    int ret;
+    SMCPMLPrefetchPage *prefetch_pages;
+    int nb_pages;
+    int pages_to_send;
+    static const int MAX_NB_PAGES = (RDMA_CONTROL_MAX_BUFFER -
+                                     sizeof(RDMAControlHeader)) /
+                                    sizeof(SMCPMLPrefetchPage);
+
+    nb_pages = min(smc_pml_prefetch_pages_count(smc_info), 
+                   SMC_NUM_DIRTY_PAGES_SEND);
+    prefetch_pages = smc_pml_prefetch_pages_info(smc_info);
+
+    head.padding = nb_pages * sizeof(*prefetch_pages);
+    SMC_LOG(PML, "send SMC_PML_RDMA_CONTROL_PREFETCH_INFO %d prefetch pages info",
+            nb_pages);
+    if (nb_pages > MAX_NB_PAGES) {
+        SMC_LOG(PML, "nb_pages=%d > MAX_NB_PAGES=%d", nb_pages, MAX_NB_PAGES);
+    }
+    
+    do {
+        pages_to_send = min(MAX_NB_PAGES, nb_pages);
+        head.len = pages_to_send * sizeof(*prefetch_pages);
+        SMC_ASSERT(head.len + sizeof(head) <= RDMA_CONTROL_MAX_BUFFER);
+        /* TODO: We should translate the byte order before and after network
+                 * transfer.
+                 */
+        ret = qemu_rdma_exchange_send(rdma, &head, (uint8_t *)prefetch_pages, NULL,
+                NULL, NULL);
+        if (ret < 0) {
+            SMC_ERR("qemu_rdma_exchange_send() failed to send dirty pages info");
+            return ret;
+        }
+
+        nb_pages -= pages_to_send;
+        prefetch_pages += pages_to_send;
+    } while (nb_pages);
+    return 0;
+}
+
 int smc_recv_dirty_info(void *opaque, SMCInfo *smc_info)
 {
     QEMUFileRDMA *rfile = opaque;
@@ -4100,6 +4151,49 @@ int smc_recv_dirty_info(void *opaque, SMCInfo *smc_info)
     req_data->control_len = 0;
     req_data->control_curr = req_data->control + sizeof(head);
     return 0;
+}
+
+/* receive the info of the dirty pages which should be prefetched from the master.
+*/
+int smc_pml_recv_prefetch_info(void *opaque, SMCInfo *smc_info)
+{
+    QEMUFileRDMA *rfile = opaque;
+    RDMAContext *rdma = rfile->rdma;
+    RDMAControlHeader head;
+    int nb_pages = 0;
+    int ret = 0;
+    RDMAWorkRequestData *req_data = &(rdma->wr_data[RDMA_WRID_READY]);
+    int total_len = -1;
+    int pages_to_save;
+
+    SMC_LOG(PML, "start to receive the info of the dirty pages "
+            "which should be prefetched from the master");
+    do {
+        ret = qemu_rdma_exchange_recv(rdma, &head, SMC_PML_RDMA_CONTROL_PREFETCH_INFO);
+        if (ret < 0) {
+            SMC_ERR("qemu_rdma_exchange_recv() failed to recv prefetch pages info");
+            return ret;
+        }
+        if (total_len == -1) {
+            total_len = head.padding;
+            SMC_LOG(PML, "receive %d prefetch pages in total", total_len);
+            if (total_len == 0) {
+                /* Prefetch pages received are empty. Do not need to prefetch now. */
+                break;
+            }
+        }
+        pages_to_save = head.len / sizeof(SMCPMLPrefetchPage);
+        /* TODO: We should translate the byte order before and after network
+               * transfer.
+               */
+        smc_pml_prefetch_pages_insert_from_buf(smc_info,
+                                        req_data->control_curr, pages_to_save);
+        nb_pages += pages_to_save;
+        total_len -= head.len;
+    } while (total_len > 0);    
+    req_data->control_len = 0;
+    req_data->control_curr = req_data->control + sizeof(head);
+    return nb_pages;
 }
 
 int smc_sync_notice_dest_to_recv(void *opaque, SMCInfo *smc_info)

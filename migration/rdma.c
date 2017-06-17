@@ -4069,11 +4069,13 @@ int smc_pml_send_prefetch_info(void *opaque, SMCInfo *smc_info)
     SMCPMLPrefetchPage *prefetch_pages;
     int nb_pages;
     int pages_to_send;
+    int nb_subsets;
     static const int MAX_NB_PAGES = (RDMA_CONTROL_MAX_BUFFER -
                                      sizeof(RDMAControlHeader)) /
                                     sizeof(SMCPMLPrefetchPage);
 
-    nb_pages = min(smc_pml_prefetch_pages_count(smc_info), 
+    nb_subsets = smc_info->pml_prefetch_pages.nb_subsets;
+    nb_pages = min(smc_pml_prefetch_pages_count(smc_info, nb_subsets), 
                    SMC_NUM_DIRTY_PAGES_SEND);
     prefetch_pages = smc_pml_prefetch_pages_info(smc_info);
 
@@ -4176,7 +4178,6 @@ int smc_pml_recv_prefetch_info(void *opaque, SMCInfo *smc_info)
         }
         if (total_len == -1) {
             total_len = head.padding;
-            SMC_LOG(PML, "receive %d prefetch pages in total", total_len);
             if (total_len == 0) {
                 /* Prefetch pages received are empty. Do not need to prefetch now. */
                 break;
@@ -4193,6 +4194,7 @@ int smc_pml_recv_prefetch_info(void *opaque, SMCInfo *smc_info)
     } while (total_len > 0);    
     req_data->control_len = 0;
     req_data->control_curr = req_data->control + sizeof(head);
+    SMC_LOG(PML, "receive %d prefetch pages in total", nb_pages);
     return nb_pages;
 }
 
@@ -4492,7 +4494,7 @@ static int smc_rdma_read(RDMAContext *rdma, RDMALocalBlock *block,
     int ret;
     RDMALocalContext *lc = &rdma->lc_remote;
 
-    SMC_LOG(FETCH, "offset=%" PRIu64 " size=%" PRIu64 " page_idx=%" PRIu32,
+    SMC_LOG(PML, "offset=%" PRIu64 " size=%" PRIu64 " page_idx=%" PRIu32,
             offset, size, page_idx);
     SMC_ASSERT(block->is_ram_block);
     send_wr.wr.rdma.rkey = block->remote_rkey;
@@ -4677,6 +4679,52 @@ static int smc_do_prefetch_page(RDMAContext *rdma, SMCInfo *smc_info,
     return ret;
 }
 
+static int smc_pml_do_prefetch_page(RDMAContext *rdma, SMCInfo *smc_info,
+                                            SMCPMLPrefetchPage *page, int page_idx)
+{
+    RDMALocalBlock *block;
+    uint8_t *host_addr;
+    int ret = 0;
+    bool in_checkpoint;
+    SMCPMLPrefetchPage *prefetched_page;
+
+    SMC_LOG(PML, "prefetch page block_offset=%" PRIu64 " offset=%" PRIu64
+            " size=%" PRIu32 " in_checkpoint=%d", page->block_offset,
+            page->offset, page->size, page->in_checkpoint);
+    block = g_hash_table_lookup(rdma->blockmap,
+                                (void *)(uintptr_t)page->block_offset);
+    SMC_ASSERT(block);
+    host_addr = block->local_host_addr + page->offset;
+    in_checkpoint = page->in_checkpoint;
+
+    if (in_checkpoint) {
+        /* The last correct version of this page has been stored in the
+              * last checkpoint. We just need to insert this page in the hash_table: 
+              * pml_prefetched_map so that we can tell if this page has been prefetched
+              * during commiting this checkpoint (apply checkpoint). 
+              */
+        smc_pml_prefetched_map_insert(smc_info, page->block_offset + page->offset,
+                                      page);
+        
+    } else {
+        /* Test if the original version of this page has been COWed during 
+               * prior prefetching. 
+               */
+        prefetched_page = smc_pml_prefetched_map_lookup(smc_info, 
+                                              page->block_offset + page->offset);
+        if (prefetched_page == NULL) {
+            /* We need to COW the original version of this page into 
+                      * pml_backup_pages list.
+                      */
+            smc_pml_backup_pages_insert(smc_info, page->block_offset, page->offset,
+                                page->size, host_addr);
+        }
+    }
+    
+    ret = smc_rdma_read(rdma, block, page->offset, page->size, page_idx);
+    return ret;
+}
+
 #define SMC_FETCH_PAGES_PER_ROUND   200
 #define SMC_TARGET_PAGE_SIZE        4096
 /* 70 pages/ms */
@@ -4763,6 +4811,51 @@ static int smc_do_prefetch_dirty_pages(RDMAContext *rdma, SMCInfo *smc_info,
     return cmd;
 }
 
+/* Prefetch as many as possible pages from the src.
+ * @complete_pages: num of the actual prefetched pages;
+ * return 0, nothing happened but prefetching pages;
+ * return negative, errors occured;
+ * return positive, recv the prefetch cmd while prefetching, complete
+ * current prefetched pages, and return the prefetch cmd type.
+ */
+static int smc_pml_do_prefetch_dirty_pages(RDMAContext *rdma, SMCInfo *smc_info,
+                                       int *complete_pages)
+{
+    int ack_idx;
+    int nb_ack = 0;
+    SMCPMLPrefetchPage *prefetch_page;
+    int ret;
+    int cmd = 0;
+    int nb_post = 0;
+    uint64_t nr_checkpoints = smc_info->nr_checkpoints;
+    bool finished = false;
+    int idx;
+    int nb_subsets;
+    int nb_eles;
+
+    *complete_pages = 0;
+    idx = 0;
+    nb_subsets = smc_info->pml_prefetch_pages.nb_subsets;
+    nb_eles = smc_pml_prefetch_pages_count(smc_info, nb_subsets);
+    while (idx < nb_eles) {
+        prefetch_page = smc_pml_prefetch_pages_get_idex(smc_info, nb_subsets, idx);
+        SMC_ASSERT(prefetch_page);
+        ret = smc_pml_do_prefetch_page(rdma, smc_info, prefetch_page, idx);
+        if ( ret < 0 ) {
+            return ret;
+        }
+        ++nb_post;
+        ++idx;
+    }
+
+    SMC_STAT("fetched %d pages", nb_post);
+    SMC_LOG(PML, "fetched %d pages", nb_post);
+    *complete_pages = nb_post;
+    return cmd;
+
+}
+
+
 int smc_prefetch_dirty_pages(void *opaque, SMCInfo *smc_info)
 {
     QEMUFileRDMA *rfile = opaque;
@@ -4823,6 +4916,23 @@ handle_cmd:
         return ret;
     }
 }
+
+int smc_pml_prefetch_dirty_pages(void *opaque, SMCInfo *smc_info)
+{
+    QEMUFileRDMA *rfile = opaque;
+    RDMAContext *rdma = rfile->rdma;
+    int cmd = 0;
+    int ret = 0;
+    int pages;
+
+    SMC_LOG(PML, "start to prefetch dirty pages");
+    smc_set_state(smc_info, SMC_STATE_PREFETCH_START);
+    
+    ret = smc_pml_do_prefetch_dirty_pages(rdma, smc_info, &pages);
+
+    return ret;
+}
+
 
 /*
  * Inform dest that dynamic registrations are done for now.

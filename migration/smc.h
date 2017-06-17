@@ -31,7 +31,18 @@ typedef struct SMCPMLPrefetchPage {
     /* Offset inside the RAMBlock which contains the page */
     uint64_t offset;
     uint32_t size;
+    bool in_checkpoint;
 } SMCPMLPrefetchPage;
+
+/* Info about a backup page which has been COWed during prefetching */
+typedef struct SMCPMLBackupPage {
+    uint64_t block_offset;
+    uint64_t offset;
+    uint64_t size;
+    uint8_t *data;
+    uint8_t *host_addr;
+} SMCPMLBackupPage;
+
 
 /* Maintain an array of a struct */
 typedef struct SMCSet {
@@ -87,12 +98,18 @@ typedef struct SMCInfo {
      * [page_physical_addr] -> the pointer of the corresponding SMCFetchPage
      */
     GHashTable *prefetch_map;
+    /* store the prefetched pages' info when using Intel PML */
     SMCSuperSet pml_prefetch_pages;
+    /* store the original version of one prefetched page*/
+    SMCSet pml_backup_pages;
+    /* Used to find whether a given page has been prefetched before */
+    GHashTable *pml_prefetched_map;
     int state;
     bool need_rollback;
     void *opaque;   /* QEMUFileRDMA */
     SMCCache cache;
     uint64_t nr_checkpoints;
+    bool need_clear_migration_bitmap;
 } SMCInfo;
 
 extern SMCInfo glo_smc_info;
@@ -103,7 +120,8 @@ void smc_dirty_pages_insert(SMCInfo *smc_info, uint64_t block_offset,
                             uint64_t offset, uint32_t size, uint32_t flags);
 void smc_pml_prefetch_pages_insert(SMCInfo *smc_info, 
                                             uint64_t block_offset,
-                                            uint64_t offset, uint32_t size);
+                                            uint64_t offset, 
+                                            bool in_checkpoint, uint32_t size);
 void smc_pml_prefetch_pages_next_subset(SMCInfo *smc_info);
 void smc_pml_prefetch_pages_reset(SMCInfo *smc_info);
 void smc_pml_prefetch_pages_insert_from_buf(SMCInfo *smc_info, 
@@ -128,14 +146,24 @@ int smc_recv_prefetch_info(void *opaque, SMCInfo *smc_info,
 int smc_sync_notice_dest_to_recv(void *opaque, SMCInfo *smc_info);
 int smc_sync_src_ready_to_recv(void *opaque, SMCInfo *smc_info);
 int smc_prefetch_dirty_pages(void *opaque, SMCInfo *smc_info);
+int smc_pml_prefetch_dirty_pages(void *opaque, SMCInfo *smc_info);
 void smc_backup_pages_insert(SMCInfo *smc_info, uint64_t block_offset,
+                             uint64_t offset, uint64_t size,
+                             uint8_t *data);
+void smc_pml_backup_pages_insert(SMCInfo *smc_info, uint64_t block_offset,
                              uint64_t offset, uint64_t size,
                              uint8_t *data);
 void *smc_backup_pages_insert_empty(SMCInfo *smc_info, uint64_t block_offset,
                                     uint64_t offset, uint64_t size,
                                     uint8_t *host_addr);
+void *smc_pml_backup_pages_insert_empty(SMCInfo *smc_info, uint64_t block_offset,
+                                    uint64_t offset, uint64_t size,
+                                    uint8_t *host_addr);
+
 void smc_backup_pages_reset(SMCInfo *smc_info);
+void smc_pml_backup_pages_reset(SMCInfo *smc_info);
 void smc_recover_backup_pages(SMCInfo *smc_info);
+void smc_pml_recover_backup_pages(SMCInfo *smc_info);
 void smc_prefetch_page_cal_hash(SMCInfo *smc_info, int index);
 void smc_rollback_with_prefetch(SMCInfo *smc_info);
 bool smc_loadvm_need_check_prefetch(SMCInfo *smc_info);
@@ -148,7 +176,9 @@ void smc_prefetch_map_gen_from_pages(SMCInfo *smc_info);
 void smc_update_prefetch_cache(SMCInfo *smc_info);
 int smc_load_page_stub(QEMUFile *f, void *opaque, void *host_addr, long size);
 SMCPMLPrefetchPage *smc_pml_prefetch_pages_info(SMCInfo *smc_info);
-int smc_pml_prefetch_pages_count(SMCInfo *smc_info);
+SMCPMLPrefetchPage *smc_pml_prefetch_pages_get_idex(SMCInfo *smc_info,
+                                             int superset_idx, int subset_idx);
+int smc_pml_prefetch_pages_count(SMCInfo *smc_info, int superset_idx);
 
 static inline int smc_dirty_pages_count(SMCInfo *smc_info)
 {
@@ -180,6 +210,11 @@ static inline void smc_prefetch_map_reset(SMCInfo *smc_info)
     g_hash_table_remove_all(smc_info->prefetch_map);
 }
 
+static inline void smc_pml_prefetched_map_reset(SMCInfo *smc_info)
+{
+    g_hash_table_remove_all(smc_info->pml_prefetched_map);
+}
+
 static inline void smc_prefetch_map_insert(SMCInfo *smc_info, uint64_t phy_addr,
                                            SMCFetchPage *page)
 {
@@ -191,10 +226,29 @@ static inline void smc_prefetch_map_insert(SMCInfo *smc_info, uint64_t phy_addr,
     g_hash_table_insert(smc_info->prefetch_map, key, page);
 }
 
+static inline void smc_pml_prefetched_map_insert(SMCInfo *smc_info, 
+                                           uint64_t phy_addr, SMCPMLPrefetchPage *page)
+{
+    gpointer key = (void *)(uintptr_t)phy_addr;
+
+    SMC_ASSERT(page);
+    if (g_hash_table_lookup(smc_info->pml_prefetched_map, key) == NULL) {
+        /* if we prefetch the same page twice, then don't insert it in the second time */
+        g_hash_table_insert(smc_info->pml_prefetched_map, key, page);
+    }
+}
+
 static inline SMCFetchPage *smc_prefetch_map_lookup(SMCInfo *smc_info,
                                                     uint64_t phy_addr)
 {
     return g_hash_table_lookup(smc_info->prefetch_map,
+                               (void *)(uintptr_t)phy_addr);
+}
+
+static inline SMCPMLPrefetchPage *smc_pml_prefetched_map_lookup(SMCInfo *smc_info,
+                                                    uint64_t phy_addr)
+{
+    return g_hash_table_lookup(smc_info->pml_prefetched_map,
                                (void *)(uintptr_t)phy_addr);
 }
 

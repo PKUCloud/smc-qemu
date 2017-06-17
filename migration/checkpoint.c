@@ -1118,6 +1118,7 @@ static void *mc_thread(void *opaque)
 #endif
 #ifdef SMC_PML_PREFETCH
         smc_pml_prefetch_pages_reset(&glo_smc_info);
+        glo_smc_info.need_clear_migration_bitmap = true;
 #endif
         slab = mc_slab_start(&mc);
         mc_copy_start(&mc);
@@ -1302,8 +1303,8 @@ static void *mc_thread(void *opaque)
 
 #ifdef SMC_PML_PREFETCH
         smc_pml_capture_dirty_pages(&mc,s);
-        smc_pml_prefetch_pages_next_subset(&glo_smc_info);
         smc_pml_send_prefetch_info(f_opaque, &glo_smc_info);
+        smc_pml_prefetch_pages_next_subset(&glo_smc_info);
 #endif
 
         if (wait_time) {
@@ -1626,9 +1627,12 @@ void mc_process_incoming_checkpoints_if_requested(QEMUFile *f)
 #endif
 #ifdef SMC_PML_PREFETCH
             smc_pml_prefetch_pages_reset(&glo_smc_info);
+            smc_pml_backup_pages_reset(&glo_smc_info);
+            smc_pml_prefetched_map_reset(&glo_smc_info);
+            
             nb_recv_prefetch_pages = smc_pml_recv_prefetch_info(f_opaque, 
                                                             &glo_smc_info);
-            //
+            smc_pml_prefetch_dirty_pages(f_opaque, &glo_smc_info);
             smc_pml_prefetch_pages_next_subset(&glo_smc_info);
 #endif
 

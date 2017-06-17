@@ -531,7 +531,14 @@ ram_addr_t migration_bitmap_find_and_reset_dirty(MemoryRegion *mr,
     }
 
     if (next < size) {
-        clear_bit(next, migration_bitmap);
+        if (smc_is_init(&glo_smc_info)) {
+            if (glo_smc_info.need_clear_migration_bitmap == false) {
+                clear_bit(next, migration_bitmap);
+            }
+        }
+        else {
+            clear_bit(next, migration_bitmap);
+        }
         migration_dirty_pages--;
     }
     return (next - base) << TARGET_PAGE_BITS;
@@ -539,18 +546,28 @@ ram_addr_t migration_bitmap_find_and_reset_dirty(MemoryRegion *mr,
 
 static inline
 ram_addr_t smc_pml_prefetch_bitmap_find_and_reset_dirty(MemoryRegion *mr,
-                                                 ram_addr_t start)
+                                                 ram_addr_t start, bool *in_checkpoint)
 {
     unsigned long base = mr->ram_addr >> TARGET_PAGE_BITS;
     unsigned long nr = base + (start >> TARGET_PAGE_BITS);
     uint64_t mr_size = TARGET_PAGE_ALIGN(memory_region_size(mr));
     unsigned long size = base + (mr_size >> TARGET_PAGE_BITS);
-
     unsigned long next;
 
     next = find_next_bit(smc_pml_prefetch_bitmap, size, nr);
     if (next < size) {
         clear_bit(next, smc_pml_prefetch_bitmap);
+        /* Test if this page has been sent to dest in last checkpoint. 
+                * If so, we do not neet to COW this page in dest,
+                * because the last correct virsion of this  page has been
+                * stored well in the last checkpoint.
+                */
+        if (test_bit(next, migration_bitmap)) {
+            *in_checkpoint = true;
+        }
+        else {
+            *in_checkpoint = false;
+        }
         smc_pml_prefetch_pages--;
     }
     return (next - base) << TARGET_PAGE_BITS;
@@ -1074,6 +1091,7 @@ static void smc_pml_ram_find_and_prefetch_block(void)
     RAMBlock *block;
     ram_addr_t offset;
     MemoryRegion *mr;
+    bool in_checkpoint;
 
     block = QLIST_FIRST_RCU(&ram_list.blocks);
     offset = 0;
@@ -1083,7 +1101,7 @@ static void smc_pml_ram_find_and_prefetch_block(void)
 
     while (true) {
         mr = block->mr;
-        offset = smc_pml_prefetch_bitmap_find_and_reset_dirty(mr, offset);
+        offset = smc_pml_prefetch_bitmap_find_and_reset_dirty(mr, offset, &in_checkpoint);
         if (offset >= block->used_length) {
             offset = 0;
             block = QLIST_NEXT_RCU(block, next);
@@ -1091,8 +1109,8 @@ static void smc_pml_ram_find_and_prefetch_block(void)
                 break;
             }
         } else {
-            smc_pml_prefetch_pages_insert(&glo_smc_info, block->offset, offset,
-                                          TARGET_PAGE_SIZE);
+            smc_pml_prefetch_pages_insert(&glo_smc_info, block->offset, offset, 
+                                          in_checkpoint, TARGET_PAGE_SIZE);
         }    
     }
 }	
@@ -1357,6 +1375,7 @@ static int ram_save_iterate(QEMUFile *f, void *opaque)
         if (pages == 0) {
             break;
         }
+
         pages_sent += pages;
         acct_info.iterations++;
         check_guest_throttling();
@@ -1398,6 +1417,13 @@ static int ram_save_iterate(QEMUFile *f, void *opaque)
 /* Called with iothread lock */
 static int ram_save_complete(QEMUFile *f, void *opaque)
 {
+    int64_t ram_bitmap_pages;
+        
+    if (smc_is_init(&glo_smc_info) && glo_smc_info.need_clear_migration_bitmap) {
+        ram_bitmap_pages = last_ram_offset() >> TARGET_PAGE_BITS;
+        bitmap_clear(migration_bitmap, 0, ram_bitmap_pages);
+    }
+
     rcu_read_lock();
 
     migration_bitmap_sync();

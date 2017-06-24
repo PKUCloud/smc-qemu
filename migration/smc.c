@@ -202,7 +202,7 @@ void smc_init(SMCInfo *smc_info, void *opaque)
 {
     SMC_LOG(INIT, "");
     SMC_ASSERT(!smc_info->init);
-    //memset(smc_info, 0, sizeof(*smc_info));
+    memset(smc_info, 0, sizeof(*smc_info));
 #ifdef SMC_PREFETCH
     smc_set_init(&smc_info->dirty_pages, sizeof(SMCDirtyPage));
     smc_set_init(&smc_info->prefetch_pages, sizeof(SMCFetchPage));
@@ -454,7 +454,7 @@ void *smc_pml_backup_pages_insert_empty(SMCInfo *smc_info,
                               .host_addr = host_addr,
                             };
     SMC_ASSERT(smc_info->init);
-    SMC_LOG(PML, "add block_offset=%" PRIu64 " offset=%" PRIu64
+    SMC_LOG(PML, "add backup_page block_offset=%" PRIu64 " offset=%" PRIu64
             " size=%" PRIu64, block_offset, offset, size);
     page.data = (uint8_t *)g_malloc(size);
     smc_set_insert(&smc_info->pml_backup_pages, &page);

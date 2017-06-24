@@ -1735,14 +1735,46 @@ static inline void *smc_host_addr_with_prefetch(SMCInfo *smc_info, QEMUFile *f,
     }
 }
 
+static inline void *smc_pml_host_addr_with_prefetch(SMCInfo *smc_info, QEMUFile *f,
+                                                ram_addr_t offset, int flags,
+                                                bool *prefetched)
+{
+    uint64_t phy_addr;
+    SMCPMLPrefetchPage *prefetch_page;
+    RAMBlock *block;
+    void *host_addr;
+    void *backup_pages;
+
+    block = smc_get_ramblock_from_stream(f, offset, flags);
+    if (!block) {
+        SMC_ERR("failed to get RAMBlock from stream");
+        return NULL;
+    }
+    host_addr = memory_region_get_ram_ptr(block->mr) + offset;
+    phy_addr = block->offset + offset;
+    prefetch_page = smc_pml_prefetched_map_lookup(smc_info, phy_addr);
+    if (prefetch_page) {
+        SMC_LOG(PML, "phy_adr=%" PRIu64 " has been prefetched", phy_addr);
+        backup_pages = smc_pml_backup_pages_insert_empty(smc_info, block->offset,
+                                                         offset, TARGET_PAGE_SIZE,
+                                                         (uint8_t *)host_addr);
+        *prefetched = true;
+        return backup_pages;
+    } else {
+        SMC_LOG(PML, "phy_addr=%" PRIu64 " hasn't been prefetched", phy_addr);
+        *prefetched = false;
+        return host_addr;
+    }
+}
+
 static int ram_load(QEMUFile *f, void *opaque, int version_id)
 {
     int flags = 0, ret = 0;
     static uint64_t seq_iter;
     int len = 0;
-#ifdef SMC_PREFETCH
+#if defined(SMC_PREFETCH) || defined(SMC_PML_PREFETCH)
     bool check_prefetch;
-    bool prefetched;
+    bool prefetched = false;
     void *f_opaque = qemu_file_get_opaque(f);
 #endif
 
@@ -1817,7 +1849,7 @@ static int ram_load(QEMUFile *f, void *opaque, int version_id)
             ram_handle_compressed(host, ch, TARGET_PAGE_SIZE);
             break;
         case RAM_SAVE_FLAG_PAGE:
-#ifdef SMC_PREFETCH
+#if defined(SMC_PREFETCH)
             check_prefetch = smc_loadvm_need_check_prefetch(&glo_smc_info);
 
             if (check_prefetch) {
@@ -1832,10 +1864,24 @@ static int ram_load(QEMUFile *f, void *opaque, int version_id)
                 /* Just load the state into guest RAM directly */
                 host = host_from_stream_offset(f, addr, flags);
             }
+#elif defined(SMC_PML_PREFETCH)
+            check_prefetch = smc_loadvm_need_check_prefetch(&glo_smc_info);
+
+            if (check_prefetch) {
+                /* Need to check if this page has been prefetched */
+                host = smc_pml_host_addr_with_prefetch(&glo_smc_info, f, addr,
+                                                       flags, &prefetched);
+                if (prefetched) {
+                    smc_load_page_stub(f, f_opaque, host, TARGET_PAGE_SIZE);
+                    break;
+                }
+            } else {
+                /* Just load the state into guest RAM directly */
+                host = host_from_stream_offset(f, addr, flags);
+            }
 #else
             host = host_from_stream_offset(f, addr, flags);
 #endif
-    
             if (!host) {
                 SMC_ERR("failed to get host_addr from stream");
                 ret = -EINVAL;

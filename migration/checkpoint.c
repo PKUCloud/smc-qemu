@@ -1638,11 +1638,19 @@ void mc_process_incoming_checkpoints_if_requested(QEMUFile *f)
             
             nb_recv_prefetch_pages = smc_pml_recv_prefetch_info(f_opaque, 
                                                             &glo_smc_info);
+            if (nb_recv_prefetch_pages < 0) {
+               need_rollback = true;
+               glo_smc_info.need_rollback = true;
+               goto apply_checkpoint;
+            }
             smc_pml_prefetch_dirty_pages(f_opaque, &glo_smc_info);
+
+            smc_set_state(&glo_smc_info, SMC_STATE_PREFETCH_DONE);
             smc_pml_prefetch_pages_next_subset(&glo_smc_info);
 #endif
 
 apply_checkpoint:
+            SMC_LOG(PML, "start applying checkpoint.");
             mc.curr_slab = QTAILQ_FIRST(&mc.slab_head);
             mc.slab_total = checkpoint_size;
 

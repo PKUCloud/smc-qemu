@@ -12,7 +12,7 @@
 #define SMC_DIRTY_FLAGS_IN_CHECKPOINT   0x1U
 
 #define SMC_PREFETCH_RECV_TIME          2
-#define SMC_NUM_DIRTY_PAGES_SEND        21500
+#define SMC_NUM_DIRTY_PAGES_SEND        2000
 
 /* Info about a dirty page within a chunk */
 typedef struct SMCDirtyPage {
@@ -109,7 +109,8 @@ typedef struct SMCInfo {
     void *opaque;   /* QEMUFileRDMA */
     SMCCache cache;
     uint64_t nr_checkpoints;
-    bool need_clear_migration_bitmap;
+    bool enable_incheckpoint_bitmap;
+    bool need_clear_incheckpoint_bitmap;
 } SMCInfo;
 
 extern SMCInfo glo_smc_info;

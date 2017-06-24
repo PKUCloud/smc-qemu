@@ -570,7 +570,7 @@ static int qemu_rdma_alloc_pd_cq_qp(RDMAContext *rdma, RDMALocalContext *lc)
 
     SMC_LOG(INIT, "create Completion Queue lc->cq[%p]", lc->cq);
 
-    attr.cap.max_send_wr = RDMA_SEND_MAX;
+    attr.cap.max_send_wr = RDMA_SEND_MAX * 2;
     attr.cap.max_recv_wr = 3;
     attr.cap.max_send_sge = 1;
     attr.cap.max_recv_sge = 1;
@@ -4080,11 +4080,8 @@ int smc_pml_send_prefetch_info(void *opaque, SMCInfo *smc_info)
     prefetch_pages = smc_pml_prefetch_pages_info(smc_info);
 
     head.padding = nb_pages * sizeof(*prefetch_pages);
-    SMC_LOG(PML, "send SMC_PML_RDMA_CONTROL_PREFETCH_INFO %d prefetch pages info",
-            nb_pages);
-    if (nb_pages > MAX_NB_PAGES) {
-        SMC_LOG(PML, "nb_pages=%d > MAX_NB_PAGES=%d", nb_pages, MAX_NB_PAGES);
-    }
+    SMC_LOG(PML, "send SMC_PML_RDMA_CONTROL_PREFETCH_INFO %d prefetch pages info"
+            , nb_pages);
     
     do {
         pages_to_send = min(MAX_NB_PAGES, nb_pages);
@@ -4512,6 +4509,18 @@ static int smc_rdma_read(RDMAContext *rdma, RDMALocalBlock *block,
     ret = ibv_post_send(lc->qp, &send_wr, &bad_wr);
     if (ret > 0) {
         SMC_ERR("ibv_post_send() failed ret=%d", ret);
+        switch (ret) {
+            case EINVAL:
+                SMC_LOG(PML, "Invalid value provided in wr");
+                break;
+            case ENOMEM:
+                SMC_LOG(PML, "Send Queue is full or not enough resources"
+                            " to complete this operation");
+                break;
+            case EFAULT:
+                SMC_LOG(PML, "Invalid value provided in qp");
+                break;
+        }
         return -ret;
     }
     return 0;
@@ -4837,6 +4846,8 @@ static int smc_pml_do_prefetch_dirty_pages(RDMAContext *rdma, SMCInfo *smc_info,
     idx = 0;
     nb_subsets = smc_info->pml_prefetch_pages.nb_subsets;
     nb_eles = smc_pml_prefetch_pages_count(smc_info, nb_subsets);
+    SMC_LOG(PML, "There are %d pages which should be fetched", nb_eles);
+    
     while (idx < nb_eles) {
         prefetch_page = smc_pml_prefetch_pages_get_idex(smc_info, nb_subsets, idx);
         SMC_ASSERT(prefetch_page);

@@ -243,6 +243,7 @@ static uint32_t last_version;
 static bool ram_bulk_stage; 
 static unsigned long *smc_pml_prefetch_bitmap;
 static uint64_t smc_pml_prefetch_pages;
+static unsigned long *smc_pml_incheckpoint_bitmap;
 
 struct CompressParam {
     bool start;
@@ -531,14 +532,13 @@ ram_addr_t migration_bitmap_find_and_reset_dirty(MemoryRegion *mr,
     }
 
     if (next < size) {
-        if (smc_is_init(&glo_smc_info)) {
-            if (glo_smc_info.need_clear_migration_bitmap == false) {
-                clear_bit(next, migration_bitmap);
-            }
+        clear_bit(next, migration_bitmap);
+#ifdef SMC_PML_PREFETCH
+        if (smc_is_init(&glo_smc_info) && glo_smc_info.enable_incheckpoint_bitmap) {
+            set_bit(next, smc_pml_incheckpoint_bitmap);
+            SMC_LOG(PML, "set bit %lu in smc_pml_incheckpoint_bitmap", next);
         }
-        else {
-            clear_bit(next, migration_bitmap);
-        }
+#endif            
         migration_dirty_pages--;
     }
     return (next - base) << TARGET_PAGE_BITS;
@@ -562,8 +562,10 @@ ram_addr_t smc_pml_prefetch_bitmap_find_and_reset_dirty(MemoryRegion *mr,
                 * because the last correct virsion of this  page has been
                 * stored well in the last checkpoint.
                 */
-        if (test_bit(next, migration_bitmap)) {
+        if (glo_smc_info.enable_incheckpoint_bitmap && 
+            test_bit(next, smc_pml_incheckpoint_bitmap)) {
             *in_checkpoint = true;
+            SMC_LOG(PML, "bit %lu is set in smc_pml_incheckpoint_bitmap", next);
         }
         else {
             *in_checkpoint = false;
@@ -1018,7 +1020,7 @@ static int ram_find_and_save_block(QEMUFile *f, bool last_stage,
 
     while (true) {
         mr = block->mr;
-        offset = migration_bitmap_find_and_reset_dirty(mr, offset);
+        offset = migration_bitmap_find_and_reset_dirty(mr, offset);       
         if (complete_round && block == last_seen_block &&
             offset >= last_offset) {
             break;
@@ -1032,8 +1034,8 @@ static int ram_find_and_save_block(QEMUFile *f, bool last_stage,
                 ram_bulk_stage = false;
                 if (migrate_use_xbzrle()) {
                     /* If xbzrle is on, stop using the data compression at this
-                     * point. In theory, xbzrle can do better than compression.
-                     */
+                                      * point. In theory, xbzrle can do better than compression.
+                                      */
                     flush_compressed_data(f);
                     compression_switch = false;
                 }
@@ -1071,7 +1073,7 @@ static int ram_find_and_save_block(QEMUFile *f, bool last_stage,
                 pages = ram_save_page(f, block, offset, last_stage,
                                       bytes_transferred);
             }
-
+            
             /* if page is unmodified, continue to the next */
             if (pages > 0) {
                 last_sent_block = block;
@@ -1082,7 +1084,6 @@ static int ram_find_and_save_block(QEMUFile *f, bool last_stage,
 
     last_seen_block = block;
     last_offset = offset;
-
     return pages;
 }
 
@@ -1091,7 +1092,7 @@ static void smc_pml_ram_find_and_prefetch_block(void)
     RAMBlock *block;
     ram_addr_t offset;
     MemoryRegion *mr;
-    bool in_checkpoint;
+    bool in_checkpoint = false;
 
     block = QLIST_FIRST_RCU(&ram_list.blocks);
     offset = 0;
@@ -1197,6 +1198,10 @@ static void migration_end(void)
     if (smc_pml_prefetch_bitmap) {
         g_free(smc_pml_prefetch_bitmap);
         smc_pml_prefetch_bitmap = NULL;
+    }
+    if (smc_pml_incheckpoint_bitmap) {
+        g_free(smc_pml_incheckpoint_bitmap);
+        smc_pml_incheckpoint_bitmap = NULL;
     }
 #endif
 
@@ -1305,6 +1310,9 @@ static int ram_save_setup(QEMUFile *f, void *opaque)
     smc_pml_prefetch_bitmap = bitmap_new(ram_bitmap_pages);
     bitmap_clear(smc_pml_prefetch_bitmap, 0, ram_bitmap_pages);
     smc_pml_prefetch_pages = 0;
+    smc_pml_incheckpoint_bitmap = bitmap_new(ram_bitmap_pages);
+    bitmap_clear(smc_pml_incheckpoint_bitmap, 0, ram_bitmap_pages);
+    SMC_LOG(PML, "init smc_pml_prefetch_bitmap & smc_pml_incheckpoint_bitmap");
 #endif
 
     /*
@@ -1417,13 +1425,6 @@ static int ram_save_iterate(QEMUFile *f, void *opaque)
 /* Called with iothread lock */
 static int ram_save_complete(QEMUFile *f, void *opaque)
 {
-    int64_t ram_bitmap_pages;
-        
-    if (smc_is_init(&glo_smc_info) && glo_smc_info.need_clear_migration_bitmap) {
-        ram_bitmap_pages = last_ram_offset() >> TARGET_PAGE_BITS;
-        bitmap_clear(migration_bitmap, 0, ram_bitmap_pages);
-    }
-
     rcu_read_lock();
 
     migration_bitmap_sync();
@@ -1463,7 +1464,17 @@ static int ram_save_complete(QEMUFile *f, void *opaque)
 
 static int ram_prefetch_complete(QEMUFile *f, void *opaque)
 {
+    int64_t ram_bitmap_pages;
+
     smc_pml_prefetch_qemu_bitmap_sync();
+
+    if (glo_smc_info.enable_incheckpoint_bitmap && 
+        glo_smc_info.need_clear_incheckpoint_bitmap) {
+        ram_bitmap_pages = last_ram_offset() >> TARGET_PAGE_BITS;
+        bitmap_clear(smc_pml_incheckpoint_bitmap, 0, ram_bitmap_pages);
+        glo_smc_info.need_clear_incheckpoint_bitmap = false;
+        SMC_LOG(PML, "clear smc_pml_incheckpoint_bitmap");
+    }
     return 0;
 }
 
@@ -1729,9 +1740,11 @@ static int ram_load(QEMUFile *f, void *opaque, int version_id)
     int flags = 0, ret = 0;
     static uint64_t seq_iter;
     int len = 0;
+#ifdef SMC_PREFETCH
     bool check_prefetch;
     bool prefetched;
     void *f_opaque = qemu_file_get_opaque(f);
+#endif
 
     seq_iter++;
 

@@ -1117,8 +1117,13 @@ static void *mc_thread(void *opaque)
         smc_dirty_pages_reset(&glo_smc_info);
 #endif
 #ifdef SMC_PML_PREFETCH
-        smc_pml_prefetch_pages_reset(&glo_smc_info);
-        glo_smc_info.need_clear_migration_bitmap = true;
+        if (smc_is_init(&glo_smc_info)) {
+            smc_pml_prefetch_pages_reset(&glo_smc_info);
+            /* need to clear smc_pml_incheckpoint_bitmap before 
+                        * capturing this checkpoint.
+                        */
+            glo_smc_info.enable_incheckpoint_bitmap = true;
+        }
 #endif
         slab = mc_slab_start(&mc);
         mc_copy_start(&mc);
@@ -1302,6 +1307,7 @@ static void *mc_thread(void *opaque)
         }
 
 #ifdef SMC_PML_PREFETCH
+        glo_smc_info.need_clear_incheckpoint_bitmap = true;
         smc_pml_capture_dirty_pages(&mc,s);
         smc_pml_send_prefetch_info(f_opaque, &glo_smc_info);
         smc_pml_prefetch_pages_next_subset(&glo_smc_info);

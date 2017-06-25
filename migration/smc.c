@@ -291,7 +291,7 @@ void smc_pml_prefetch_pages_reset(SMCInfo *smc_info)
 {
     SMC_ASSERT(smc_info->init);
     smc_superset_reset(&smc_info->pml_prefetch_pages);
-    SMC_LOG(GEN, "after reset pml_prefetch_pages subset=%d", 
+    SMC_LOG(PML, "after reset pml_prefetch_pages subset=%d", 
                 smc_info->pml_prefetch_pages.nb_subsets);
 }
 
@@ -500,7 +500,7 @@ void smc_pml_recover_backup_pages(SMCInfo *smc_info)
     int nb_pages = smc_info->pml_backup_pages.nb_eles;
     int i;
 
-    SMC_LOG(PML, "backup_pages=%d", nb_pages);
+    SMC_LOG(PML, "pml_backup_pages=%d", nb_pages);
     for (i = 0; i < nb_pages; ++i) {
         memcpy(page->host_addr, page->data, page->size);
         g_free(page->data);
@@ -539,6 +539,34 @@ void smc_rollback_with_prefetch(SMCInfo *smc_info)
     smc_prefetch_map_reset(smc_info);
 
     smc_cache_stat(&smc_info->cache);
+}
+
+void smc_pml_rollback_with_prefetch(SMCInfo *smc_info)
+{
+    switch (smc_info->state) {
+    case SMC_STATE_TRANSACTION_START:
+    case SMC_STATE_PREFETCH_START:
+    case SMC_STATE_PREFETCH_DONE:
+        SMC_LOG(PML, "rollback with state=%d", smc_info->state);
+        smc_pml_recover_backup_pages(smc_info);
+        break;
+
+    case SMC_STATE_PREFETCH_ABANDON:
+        SMC_ERR("rollback with state=%s","SMC_STATE_PREFETCH_ABANDON");
+        break;
+
+    case SMC_STATE_RECV_CHECKPOINT:
+        SMC_LOG(PML, "rollback with state=%s","SMC_STATE_RECV_CHECKPOINT");
+        break;
+
+    default:
+        SMC_ERR("rollback with unknown state=%d", smc_info->state);
+        break;
+    }
+
+    smc_pml_prefetch_pages_reset(smc_info);
+    smc_pml_backup_pages_reset(smc_info);
+    smc_pml_prefetched_map_reset(smc_info);
 }
 
 bool smc_loadvm_need_check_prefetch(SMCInfo *smc_info)

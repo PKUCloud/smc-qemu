@@ -1639,11 +1639,16 @@ void mc_process_incoming_checkpoints_if_requested(QEMUFile *f)
             nb_recv_prefetch_pages = smc_pml_recv_prefetch_info(f_opaque, 
                                                             &glo_smc_info);
             if (nb_recv_prefetch_pages < 0) {
-               need_rollback = true;
-               glo_smc_info.need_rollback = true;
-               goto apply_checkpoint;
+                need_rollback = true;
+                glo_smc_info.need_rollback = true;
+                goto apply_checkpoint;
             }
-            smc_pml_prefetch_dirty_pages(f_opaque, &glo_smc_info);
+            ret = smc_pml_prefetch_dirty_pages(f_opaque, &glo_smc_info);
+            if (ret < 0) {
+                need_rollback = true;
+                glo_smc_info.need_rollback = true;
+                goto apply_checkpoint;
+            }
 
             smc_set_state(&glo_smc_info, SMC_STATE_PREFETCH_DONE);
             smc_pml_prefetch_pages_next_subset(&glo_smc_info);
@@ -1695,6 +1700,9 @@ rollback:
         blk_stop_replication(true, &local_err);
 #ifdef SMC_PREFETCH
     smc_rollback_with_prefetch(&glo_smc_info);
+#endif
+#ifdef SMC_PML_PREFETCH
+    smc_pml_rollback_with_prefetch(&glo_smc_info);
 #endif
     goto out;
 err:

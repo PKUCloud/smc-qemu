@@ -100,7 +100,7 @@ typedef struct SMCInfo {
     GHashTable *prefetch_map;
     /* store the prefetched pages' info when using Intel PML */
     SMCSuperSet pml_prefetch_pages;
-    /* store the original version of one prefetched page*/
+    /* store the last correct version of one prefetched page*/
     SMCSet pml_backup_pages;
     /* Used to find whether a given page has been prefetched before */
     GHashTable *pml_prefetched_map;
@@ -167,6 +167,7 @@ void smc_recover_backup_pages(SMCInfo *smc_info);
 void smc_pml_recover_backup_pages(SMCInfo *smc_info);
 void smc_prefetch_page_cal_hash(SMCInfo *smc_info, int index);
 void smc_rollback_with_prefetch(SMCInfo *smc_info);
+void smc_pml_rollback_with_prefetch(SMCInfo *smc_info);
 bool smc_loadvm_need_check_prefetch(SMCInfo *smc_info);
 bool smc_check_dirty_page(SMCInfo *smc_info, uint64_t block_offset,
                           uint64_t offset, uint64_t size, SMC_HASH hash_val);

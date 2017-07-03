@@ -195,8 +195,8 @@ enum {
     SMC_RDMA_CONTROL_NO_PREFETCH_INFO,    /* Don't send prefetched pages info */
     SMC_RDMA_CONTROL_PREFETCH_INFO,   /* Send prefetched pages info */
     SMC_RDMA_CONTROL_SYNC,            /* Sync between src and dest */
-    SMC_PML_RDMA_CONTROL_PREFETCH_INFO,  /* send info of the dirty pages 
-                                                                            * that shoude be prefetch*/ 
+    SMC_PML_RDMA_CONTROL_PREFETCH_INFO,  /* Send info of the dirty pages that shoude be prefetch*/
+    SMC_PML_RDMA_CONTROL_START_PREFETCH, /* Send a signal to start prefetching */
 };
 
 static const char *control_desc[] = {
@@ -4055,6 +4055,23 @@ int smc_send_dirty_info(void *opaque, SMCInfo *smc_info)
     return 0;
 }
 
+/* Send dest a signal to start prefetching */
+int smc_pml_send_prefetch_signal(RDMAContext *rdma)
+{
+    RDMAControlHeader cmd = { .len = 0,
+                              .type = SMC_PML_RDMA_CONTROL_START_PREFETCH,
+                              .repeat = 1, };
+    int ret;
+
+    SMC_LOG(PML, "Send dest a signal to start prefetching");
+    ret = qemu_rdma_post_send_control(rdma, NULL, &cmd);
+    if (ret < 0) {
+        SMC_ERR("qemu_rdma_post_send_control() failed to send the cmd");
+        return ret;
+    }
+    return 0;
+}
+
 /* Info about the prefetched dirty pages of one chunk may be too large to load 
  * it all into one RDMA control message. We utilize the RDMAControlHeader.
  * padding to record the total length of all the messages data.
@@ -4082,7 +4099,13 @@ int smc_pml_send_prefetch_info(void *opaque, SMCInfo *smc_info)
     head.padding = nb_pages * sizeof(*prefetch_pages);
     SMC_LOG(PML, "send SMC_PML_RDMA_CONTROL_PREFETCH_INFO %d prefetch pages info"
             , nb_pages);
-    
+
+    ret = smc_pml_send_prefetch_signal(rdma);
+    if (ret) {
+        SMC_LOG(PML, "smc_pml_send_prefetch_signal() failed to singal the dest, "
+                "skip this round of prefetching");
+        return ret;
+    }
     do {
         pages_to_send = min(MAX_NB_PAGES, nb_pages);
         head.len = pages_to_send * sizeof(*prefetch_pages);

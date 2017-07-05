@@ -142,6 +142,7 @@ int smc_send_dirty_info(void *opaque, SMCInfo *smc_info);
 int smc_pml_send_prefetch_info(void *opaque, SMCInfo *smc_info);
 int smc_recv_dirty_info(void *opaque, SMCInfo *smc_info);
 int smc_pml_recv_prefetch_info(void *opaque, SMCInfo *smc_info);
+int smc_pml_block_recv_prefetch_signal(void *opaque, SMCInfo *smc_info);
 int smc_recv_prefetch_info(void *opaque, SMCInfo *smc_info,
                            bool request_info);
 int smc_sync_notice_dest_to_recv(void *opaque, SMCInfo *smc_info);

@@ -1442,6 +1442,7 @@ void mc_process_incoming_checkpoints_if_requested(QEMUFile *f)
     bool blk_enabled = false;
     Error *local_err = NULL;
     bool need_rollback = false;
+    bool need_recv_prefetch_signal = true;
 
     CALC_MAX_STRIKES();
 
@@ -1635,6 +1636,14 @@ void mc_process_incoming_checkpoints_if_requested(QEMUFile *f)
             smc_pml_prefetch_pages_reset(&glo_smc_info);
             smc_pml_backup_pages_reset(&glo_smc_info);
             smc_pml_prefetched_map_reset(&glo_smc_info);
+
+            if (need_recv_prefetch_signal) {
+                ret = smc_pml_block_recv_prefetch_signal(f_opaque, 
+                                                         &glo_smc_info);
+                if (ret < 0) {
+                    SMC_LOG(PML, "failed to recv prefetch signal");
+                }
+            }
             
             nb_recv_prefetch_pages = smc_pml_recv_prefetch_info(f_opaque, 
                                                             &glo_smc_info);

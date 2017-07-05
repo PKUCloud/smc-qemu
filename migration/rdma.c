@@ -4505,6 +4505,25 @@ static int smc_block_recv_prefetch_cmd(RDMAContext *rdma, SMCInfo *smc_info)
     return head.type;
 }
 
+int smc_pml_block_recv_prefetch_signal(void *opaque, SMCInfo *smc_info)
+{
+    QEMUFileRDMA *rfile = opaque;
+    RDMAContext *rdma = rfile->rdma;
+    RDMAControlHeader head;
+    int ret;
+
+    ret = qemu_rdma_exchange_get_response(rdma, &head, RDMA_CONTROL_NONE,
+                                          RDMA_WRID_DATA);
+    if (ret < 0) {
+        SMC_ERR("qemu_rdma_exchange_get_response() failed to recv on "
+                "RDMA_WRID_DATA");
+        return ret;
+    }
+
+    SMC_LOG(PML, "recv prefetch signal %d", head.type);
+    return head.type;
+}
+
 static int smc_rdma_read(RDMAContext *rdma, RDMALocalBlock *block,
                          uint64_t offset, uint64_t size, uint32_t page_idx)
 {

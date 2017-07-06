@@ -4056,7 +4056,7 @@ int smc_send_dirty_info(void *opaque, SMCInfo *smc_info)
 }
 
 /* Send dest a signal to start prefetching */
-int smc_pml_send_prefetch_signal(RDMAContext *rdma)
+static int smc_pml_send_prefetch_signal(RDMAContext *rdma)
 {
     RDMAControlHeader cmd = { .len = 0,
                               .type = SMC_PML_RDMA_CONTROL_START_PREFETCH,
@@ -4513,14 +4513,29 @@ int smc_pml_block_recv_prefetch_signal(void *opaque, SMCInfo *smc_info)
     int ret;
 
     ret = qemu_rdma_exchange_get_response(rdma, &head, RDMA_CONTROL_NONE,
-                                          RDMA_WRID_DATA);
+                                          RDMA_WRID_READY);
     if (ret < 0) {
         SMC_ERR("qemu_rdma_exchange_get_response() failed to recv on "
-                "RDMA_WRID_DATA");
+                "RDMA_WRID_READY");
         return ret;
     }
 
     SMC_LOG(PML, "recv prefetch signal %d", head.type);
+    if (head.type != SMC_PML_RDMA_CONTROL_START_PREFETCH) {
+        SMC_ERR("Was expecting a %d control message, but got: %d",
+                SMC_PML_RDMA_CONTROL_START_PREFETCH ,head.type);
+        return -EIO;
+    }
+
+    /*
+       * Post a new RECV work request to replace the one we just consumed.
+       */
+    ret = qemu_rdma_post_recv_control(rdma, RDMA_WRID_READY);
+    if (ret) {
+        ERROR(NULL, "posting second control recv!");
+        return ret;
+    }
+    
     return head.type;
 }
 

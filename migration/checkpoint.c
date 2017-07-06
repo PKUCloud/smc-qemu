@@ -1642,6 +1642,9 @@ void mc_process_incoming_checkpoints_if_requested(QEMUFile *f)
                                                          &glo_smc_info);
                 if (ret < 0) {
                     SMC_LOG(PML, "failed to recv prefetch signal");
+                    need_rollback = true;
+                    glo_smc_info.need_rollback = true;
+                    goto apply_checkpoint;
                 }
             }
             

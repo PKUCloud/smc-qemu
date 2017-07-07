@@ -1647,6 +1647,7 @@ void mc_process_incoming_checkpoints_if_requested(QEMUFile *f)
                     goto apply_checkpoint;
                 }
             }
+            need_recv_prefetch_signal = true;
             
             nb_recv_prefetch_pages = smc_pml_recv_prefetch_info(f_opaque, 
                                                             &glo_smc_info);
@@ -1655,7 +1656,8 @@ void mc_process_incoming_checkpoints_if_requested(QEMUFile *f)
                 glo_smc_info.need_rollback = true;
                 goto apply_checkpoint;
             }
-            ret = smc_pml_prefetch_dirty_pages(f_opaque, &glo_smc_info);
+            ret = smc_pml_prefetch_dirty_pages(f_opaque, &glo_smc_info, 
+                                               &need_recv_prefetch_signal);
             if (ret < 0) {
                 need_rollback = true;
                 glo_smc_info.need_rollback = true;

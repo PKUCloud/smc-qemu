@@ -4188,6 +4188,16 @@ int smc_pml_recv_prefetch_info(void *opaque, SMCInfo *smc_info)
     int total_len = -1;
     int pages_to_save;
 
+    /* Post a Receive Request before recv the prefetch info to recv signals
+       *  after receiving the prefetch info.
+       */
+    ret = qemu_rdma_post_recv_control(rdma, RDMA_WRID_DATA);
+    if (ret) {
+        SMC_ERR("qemu_rdma_post_recv_control() failed to post RR on "
+                "RDMA_WRID_DATA");
+        return ret;
+    }
+
     SMC_LOG(PML, "start to receive the info of the dirty pages "
             "which should be prefetched from the master");
     do {
@@ -4479,6 +4489,46 @@ static int smc_try_recv_prefetch_cmd(RDMAContext *rdma, SMCInfo *smc_info)
 
     return head.type;
 }
+
+/* Before calling this function, there are two RR in queue: RDMA_WRID_DATA and
+ * RDMA_WRID_READY.
+ * return vlaue:
+ * - 0, haven't received the next prefetch signal yet;
+ * - > 0, received the next prefetch signal, return the type of message;
+ */
+static int smc_pml_try_recv_next_signal(RDMAContext *rdma, SMCInfo *smc_info)
+{
+    RDMALocalContext *lc = &rdma->lc_remote;
+    int ret = 0;
+    uint64_t wr_id;
+    RDMAControlHeader head;
+
+    SMC_LOG(PML, "starts");
+    ret = smc_rdma_poll(rdma, lc, &wr_id);
+    if (ret < 0) {
+        SMC_ERR("smc_rdma_poll() failed ret=%d", ret);
+        return ret;
+    }
+
+    if (wr_id == RDMA_WRID_NONE) {
+        SMC_LOG(PML, "not recv the next prefetch signal yet");
+        return 0;
+    }
+
+    if (wr_id != RDMA_WRID_RECV_CONTROL + RDMA_WRID_DATA) {
+        SMC_ERR("recv wrong wr_id=%" PRIu64, wr_id);
+        return -1;
+    }
+
+    /* Process the prefetch cmd */
+    network_to_control((void *)rdma->wr_data[RDMA_WRID_DATA].control);
+    memcpy(&head, rdma->wr_data[RDMA_WRID_DATA].control, sizeof(head));
+
+    SMC_LOG(PML, "recv next prefetch signal=%d", head.type);
+
+    return head.type;
+}
+
 
 /* Before calling this function, there are two RR in queue: RDMA_WRID_DATA and
  * RDMA_WRID_READY.
@@ -4985,20 +5035,44 @@ handle_cmd:
     }
 }
 
-int smc_pml_prefetch_dirty_pages(void *opaque, SMCInfo *smc_info)
+int smc_pml_prefetch_dirty_pages(void *opaque, SMCInfo *smc_info, 
+                                           bool *need_recv_prefetch_signal)
 {
     QEMUFileRDMA *rfile = opaque;
     RDMAContext *rdma = rfile->rdma;
-    int cmd = 0;
+    int signal = 0;
     int ret = 0;
     int pages;
 
     SMC_LOG(PML, "start to prefetch dirty pages");
     smc_set_state(smc_info, SMC_STATE_PREFETCH_START);
+
+    ret = smc_pml_try_recv_next_signal(rdma, smc_info);
+    if (ret < 0) {
+        return ret;
+    } else {
+        signal = ret;
+        goto handle_signal;
+    }
     
     ret = smc_pml_do_prefetch_dirty_pages(rdma, smc_info, &pages);
-
     return ret;
+
+handle_signal:
+    if (signal == SMC_PML_RDMA_CONTROL_START_PREFETCH) {
+        /* Receive a signal to start next round prefetching, so
+                * terminate this prefetching immediately.
+                */
+        SMC_LOG(PML, "Receive a signal to start next round prefetching,"
+                "so terminate this prefetching immediately.");
+        smc_set_state(smc_info, SMC_STATE_PREFETCH_DONE);
+        *need_recv_prefetch_signal = false;
+        return 0;
+    } else {
+        SMC_ERR("receive a wrong signal number %d", signal);
+        return -1;
+    }
+        
 }
 
 

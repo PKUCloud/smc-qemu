@@ -4749,6 +4749,55 @@ static int smc_try_ack_rdma_read(RDMAContext *rdma, SMCInfo *smc_info,
     return 0;
 }
 
+static int smc_pml_try_ack_rdma_read(RDMAContext *rdma, SMCInfo *smc_info,
+                                 bool block, int *ack_idx)
+{
+    RDMALocalContext *lc = &rdma->lc_remote;
+    int ret = 0;
+    uint64_t wr_id;
+    RDMAControlHeader head;
+    uint64_t wr_id_masked;
+    uint64_t index;
+
+    SMC_LOG(PML, "is_blocked=%d", block);
+    if (block) {
+        ret = smc_block_for_cq(rdma, lc, &wr_id);
+        if (ret < 0) {
+            return ret;
+        }
+    } else {
+        ret = smc_rdma_poll(rdma, lc, &wr_id);
+        if (ret < 0) {
+            SMC_ERR("smc_rdma_poll() failed ret=%d", ret);
+            return ret;
+        }
+
+        if (wr_id == RDMA_WRID_NONE) {
+            *ack_idx = -1;
+            SMC_LOG(PML, "no WR finished");
+            return 0;
+        }
+    }
+
+    SMC_LOG(PML, "got wr_id=%" PRIu64, wr_id);
+    wr_id_masked = wr_id & RDMA_WRID_TYPE_MASK;
+    if (wr_id_masked == RDMA_WRID_RECV_CONTROL + RDMA_WRID_DATA) {
+        /* Recv the next prefetch signal */
+        network_to_control((void *)rdma->wr_data[RDMA_WRID_DATA].control);
+        memcpy(&head, rdma->wr_data[RDMA_WRID_DATA].control, sizeof(head));
+
+        SMC_ASSERT(head.type == SMC_PML_RDMA_CONTROL_START_PREFETCH);
+        SMC_LOG(PML, "recv prefetch signal=%d while prefetching pages", head.type);
+        return head.type;
+    }
+
+    SMC_ASSERT(wr_id_masked == RDMA_WRID_RDMA_READ_REMOTE);
+    index = (wr_id & RDMA_WRID_BLOCK_MASK) >> RDMA_WRID_BLOCK_SHIFT;
+    *ack_idx = index;
+    SMC_LOG(PML, "prefetch page idx=%" PRIu64 " completed", index);
+    return 0;
+}
+
 uint8_t *smc_host_addr_from_offset(void *opaque, uint64_t block_offset,
                                    uint64_t offset)
 {
@@ -4943,8 +4992,6 @@ static int smc_pml_do_prefetch_dirty_pages(RDMAContext *rdma, SMCInfo *smc_info,
     int ret;
     int cmd = 0;
     int nb_post = 0;
-    uint64_t nr_checkpoints = smc_info->nr_checkpoints;
-    bool finished = false;
     int idx;
     int nb_subsets;
     int nb_eles;
@@ -4964,13 +5011,42 @@ static int smc_pml_do_prefetch_dirty_pages(RDMAContext *rdma, SMCInfo *smc_info,
         }
         ++nb_post;
         ++idx;
+
+        /* Wait here to see if there are any RDMA READ have completed */
+        ret = smc_pml_try_ack_rdma_read(rdma, smc_info, false, &ack_idx);
+        if (ret < 0) {
+            return ret;
+        } else if (ret > 0) {
+            /* We have recv the next prefetch signal, ret is the signal type */
+            SMC_ASSERT(cmd == 0);
+            cmd = ret;
+        } else if (ack_idx != -1) {
+            ++nb_ack;
+        }
+
+        if (cmd) {
+            break;
+        }
+    }
+
+    while (nb_ack < nb_post) {
+        /* Block until any WR is finished */
+        ret = smc_pml_try_ack_rdma_read(rdma, smc_info, true, &ack_idx);
+        if (ret < 0) {
+            return ret;
+        } else if (ret > 0) {
+            SMC_ASSERT(cmd == 0);
+            cmd = ret;
+        } else {
+            SMC_ASSERT(ack_idx != -1);
+            smc_prefetch_page_cal_hash(smc_info, ack_idx);
+            ++nb_ack;
+        }
     }
 
     SMC_STAT("fetched %d pages", nb_post);
-    SMC_LOG(PML, "fetched %d pages", nb_post);
     *complete_pages = nb_post;
     return cmd;
-
 }
 
 

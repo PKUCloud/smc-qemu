@@ -5126,12 +5126,18 @@ int smc_pml_prefetch_dirty_pages(void *opaque, SMCInfo *smc_info,
     ret = smc_pml_try_recv_next_signal(rdma, smc_info);
     if (ret < 0) {
         return ret;
-    } else {
+    } else if (ret > 0) {
         signal = ret;
         goto handle_signal;
     }
     
     ret = smc_pml_do_prefetch_dirty_pages(rdma, smc_info, &pages);
+    if (ret < 0) {
+        return ret;
+    } else if (ret > 0){
+        signal = ret;
+        goto handle_signal;
+    }
     return ret;
 
 handle_signal:

@@ -4191,12 +4191,14 @@ int smc_pml_recv_prefetch_info(void *opaque, SMCInfo *smc_info)
     /* Post a Receive Request before recv the prefetch info to recv signals
        *  after receiving the prefetch info.
        */
-    ret = qemu_rdma_post_recv_control(rdma, RDMA_WRID_DATA);
-    if (ret) {
-        SMC_ERR("qemu_rdma_post_recv_control() failed to post RR on "
-                "RDMA_WRID_DATA");
-        return ret;
-    }
+    /*
+        ret = qemu_rdma_post_recv_control(rdma, RDMA_WRID_DATA);
+        if (ret) {
+            SMC_ERR("qemu_rdma_post_recv_control() failed to post RR on "
+                    "RDMA_WRID_DATA");
+            return ret;
+        }
+        */
 
     SMC_LOG(PML, "start to receive the info of the dirty pages "
             "which should be prefetched from the master");
@@ -5039,7 +5041,6 @@ static int smc_pml_do_prefetch_dirty_pages(RDMAContext *rdma, SMCInfo *smc_info,
             cmd = ret;
         } else {
             SMC_ASSERT(ack_idx != -1);
-            smc_prefetch_page_cal_hash(smc_info, ack_idx);
             ++nb_ack;
         }
     }

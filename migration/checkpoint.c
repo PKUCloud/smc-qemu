@@ -1654,26 +1654,31 @@ void mc_process_incoming_checkpoints_if_requested(QEMUFile *f)
             }
 #endif
 #ifdef SMC_PML_PREFETCH
-            smc_pml_prefetch_pages_reset(&glo_smc_info);
-            smc_pml_backup_pages_reset(&glo_smc_info);
-            smc_pml_prefetched_map_reset(&glo_smc_info);
-            
-            nb_recv_prefetch_pages = smc_pml_recv_prefetch_info(f_opaque, 
-                                                            &glo_smc_info);
-            if (nb_recv_prefetch_pages < 0) {
-                need_rollback = true;
-                glo_smc_info.need_rollback = true;
-                goto apply_checkpoint;
+            while (true) {
+                smc_pml_prefetch_pages_reset(&glo_smc_info);
+                smc_pml_backup_pages_reset(&glo_smc_info);
+                smc_pml_prefetched_map_reset(&glo_smc_info);
+                
+                nb_recv_prefetch_pages = smc_pml_recv_prefetch_info(f_opaque,
+                                                                &glo_smc_info);
+                if (nb_recv_prefetch_pages < 0) {
+                    need_rollback = true;
+                    glo_smc_info.need_rollback = true;
+                    goto apply_checkpoint;
+                }
+                ret = smc_pml_prefetch_dirty_pages(f_opaque, &glo_smc_info);
+                if (ret < 0) {
+                    need_rollback = true;
+                    glo_smc_info.need_rollback = true;
+                    goto apply_checkpoint;
+                }
+                if (ret == 0) {
+                    /* Receive a signal to stop this round prefetching. */
+                    break;
+                }
+                smc_set_state(&glo_smc_info, SMC_STATE_PREFETCH_DONE);
+                smc_pml_prefetch_pages_next_subset(&glo_smc_info);
             }
-            ret = smc_pml_prefetch_dirty_pages(f_opaque, &glo_smc_info);
-            if (ret < 0) {
-                need_rollback = true;
-                glo_smc_info.need_rollback = true;
-                goto apply_checkpoint;
-            }
-
-            smc_set_state(&glo_smc_info, SMC_STATE_PREFETCH_DONE);
-            smc_pml_prefetch_pages_next_subset(&glo_smc_info);
 #endif
 
 apply_checkpoint:

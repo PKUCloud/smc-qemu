@@ -5034,7 +5034,8 @@ static int smc_pml_do_prefetch_dirty_pages(RDMAContext *rdma, SMCInfo *smc_info,
         }
     }
 
-    SMC_STAT("fetched %d pages", nb_post);
+    SMC_STAT("Fetched %d pages (But there are %d pages which should be fetched)",
+             nb_post, nb_eles);
     *complete_pages = nb_post;
     return signal;
 }

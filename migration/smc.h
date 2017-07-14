@@ -13,6 +13,7 @@
 
 #define SMC_PREFETCH_RECV_TIME          2
 #define SMC_NUM_DIRTY_PAGES_SEND        2000
+#define SMC_PML_PREFETCH_ROUND          1
 
 /* Info about a dirty page within a chunk */
 typedef struct SMCDirtyPage {

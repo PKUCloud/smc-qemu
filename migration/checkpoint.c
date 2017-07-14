@@ -1046,6 +1046,7 @@ static void *mc_thread(void *opaque)
     Error *local_err = NULL;
     bool blk_enabled = false;
     int64_t fetch_time;
+    uint64_t prefetch_round;
 
     smc_init(&glo_smc_info, f_opaque);
 
@@ -1110,10 +1111,10 @@ static void *mc_thread(void *opaque)
     while (s->state == MIGRATION_STATUS_CHECKPOINTING) {
         int64_t start_time, xmit_start, end_time;
         bool commit_sent = false;
-        int nr_dirty_pages;
-        double tmp;
         int fetch_speed;
 #ifdef SMC_PREFETCH
+        int nr_dirty_pages;
+        double tmp;
         smc_dirty_pages_reset(&glo_smc_info);
 #endif
 #ifdef SMC_PML_PREFETCH
@@ -1273,7 +1274,7 @@ static void *mc_thread(void *opaque)
         s->log_dirty_time = norm_mig_log_dirty_time();
         s->mbps = MBPS(mc.slab_total, s->xmit_time);
         s->copy_mbps = MBPS(mc.slab_total, s->ram_copy_time);
-        */
+      */
         s->bytes_xfer = mc.slab_total;
         s->checkpoints = ++(mc.checkpoints);
 
@@ -1296,47 +1297,64 @@ static void *mc_thread(void *opaque)
          * will end up diving right back into the next checkpoint
          * as soon as the previous transmission completed.
          */
-#ifdef SMC_PML_PREFETCH
-        wait_time = wait_time / 2;
-#endif
+
+#if defined(SMC_PML_PREFETCH)
+        prefetch_round = SMC_PML_PREFETCH_ROUND;
+        SMC_LOG(PML, "We have %" PRIu64 "ms remains as wait_time.", wait_time);
+        wait_time = (wait_time) / (prefetch_round + 1);
+        if (wait_time) {
+            SMC_LOG(PML, "let VM run %" PRIu64 "ms", wait_time);
+            s->nr_sleeps++;
+            g_usleep(wait_time * 1000);
+            s->total_wait_time += wait_time;
+        }
+        do {
+            glo_smc_info.need_clear_incheckpoint_bitmap = true;
+            smc_pml_capture_dirty_pages(&mc,s);
+            smc_pml_send_prefetch_info(f_opaque, &glo_smc_info);
+            smc_pml_prefetch_pages_next_subset(&glo_smc_info);
+            if (wait_time) {
+                SMC_LOG(PML, "let VM run %" PRIu64 "ms", wait_time);
+                s->nr_sleeps++;
+                g_usleep(wait_time * 1000);
+                s->total_wait_time += wait_time;
+            }
+            /*
+             * We should send slave a SMC_PML_RDMA_CONTROL_STOP_PREFETCH
+             * signal to info it to stop prefetching, therefore, if prefetch_round count
+             * down to 1, we send the SMC_PML_RDMA_CONTROL_STOP_PREFETCH 
+             * signal, otherwise we send SMC_PML_RDMA_CONTROL_NEXT_PREFETCH.
+             */
+            smc_pml_send_prefetch_signal(f_opaque, (prefetch_round == 1));
+            --prefetch_round;
+        } while (prefetch_round > 0);
+        
+#elif defined(SMC_PREFETCH)
+        if (wait_time) {
+           SMC_LOG(GEN, "let VM run %" PRIu64 "ms", wait_time);
+           s->nr_sleeps++;
+           g_usleep(wait_time * 1000);
+           s->total_wait_time += wait_time;
+        }
+        /* TODO: Maybe we should decrease the @wait_time to sleep to get time
+         * for receiving the prefetched info.
+         * We should decide if we have time to receive the prefetched pages info
+         * or not according to the @wait_time.
+         */
+        ret = smc_recv_prefetch_info(f_opaque, &glo_smc_info, true);
+        if (ret < 0) {
+            SMC_ERR("smc_recv_prefetch_info() failed");
+            goto err;
+        }
+#else
         if (wait_time) {
             SMC_LOG(GEN, "let VM run %" PRIu64 "ms", wait_time);
             s->nr_sleeps++;
             g_usleep(wait_time * 1000);
             s->total_wait_time += wait_time;
         }
-
-#ifdef SMC_PML_PREFETCH
-        glo_smc_info.need_clear_incheckpoint_bitmap = true;
-        smc_pml_capture_dirty_pages(&mc,s);
-        smc_pml_send_prefetch_info(f_opaque, &glo_smc_info);
-        smc_pml_prefetch_pages_next_subset(&glo_smc_info);
 #endif
 
-        if (wait_time) {
-            SMC_LOG(GEN, "after prefetch let VM run %" PRIu64 "ms", wait_time);
-            s->nr_sleeps++;
-            g_usleep(wait_time * 1000);
-            s->total_wait_time += wait_time;
-        }
-
-#ifdef SMC_PML_PREFETCH
-        smc_pml_send_prefetch_signal(f_opaque, true);
-#endif
-        
-        /* TODO: Maybe we should decrease the @wait_time to sleep to get time
-         * for receiving the prefetched info.
-         * We should decide if we have time to receive the prefetched pages info
-         * or not according to the @wait_time.
-         */
-
-#ifdef SMC_PREFETCH
-        ret = smc_recv_prefetch_info(f_opaque, &glo_smc_info, true);
-        if (ret < 0) {
-            SMC_ERR("smc_recv_prefetch_info() failed");
-            goto err;
-        }
-#endif
         start_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
         if (start_time > end_time) {
             fetch_time = start_time - end_time;

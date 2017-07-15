@@ -153,6 +153,7 @@ int smc_sync_notice_dest_to_recv(void *opaque, SMCInfo *smc_info);
 int smc_sync_src_ready_to_recv(void *opaque, SMCInfo *smc_info);
 int smc_prefetch_dirty_pages(void *opaque, SMCInfo *smc_info);
 int smc_pml_prefetch_dirty_pages(void *opaque, SMCInfo *smc_info);
+int smc_pml_send_round_prefetched_num(void *opaque, SMCInfo *smc_info);
 void smc_backup_pages_insert(SMCInfo *smc_info, uint64_t block_offset,
                              uint64_t offset, uint64_t size,
                              uint8_t *data);

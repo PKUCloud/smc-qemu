@@ -198,6 +198,7 @@ enum {
     SMC_PML_RDMA_CONTROL_PREFETCH_INFO,  /* Send info of the dirty pages that shoude be prefetch*/
     SMC_PML_RDMA_CONTROL_NEXT_PREFETCH,  /* Send a signal to start next round prefetching */
     SMC_PML_RDMA_CONTROL_STOP_PREFETCH,   /* Send a signal to stop prefetching */
+    SMC_PML_RDMA_CONTROL_PREFETCHED_NUM,  /* Send the number of the prefetched pages in each round */
 };
 
 static const char *control_desc[] = {
@@ -4413,6 +4414,31 @@ static int smc_rdma_send_prefetch_info(RDMAContext *rdma, SMCInfo *smc_info)
 
     req_data->control_len = 0;
     req_data->control_curr = req_data->control + sizeof(resp);
+    return 0;
+}
+
+/* Send the number of the prefetched pages in each round to the src */
+int smc_pml_send_round_prefetched_num(void *opaque, SMCInfo *smc_info)
+{
+    QEMUFileRDMA *rfile = opaque;
+    RDMAContext *rdma = rfile->rdma;
+    RDMAControlHeader head = { .type = SMC_PML_RDMA_CONTROL_PREFETCHED_NUM,
+                               .repeat = 1 };
+    int ret;
+    int nb_round = smc_info->pml_prefetch_pages.nb_subsets;
+    //RDMAWorkRequestData *req_data = &rdma->wr_data[RDMA_WRID_READY];
+
+    SMC_LOG(PML, "send SMC_PML_RDMA_CONTROL_PREFETCHED_NUM of %d rounds", nb_round);
+    head.len = nb_round * sizeof(uint32_t);
+    SMC_ASSERT(head.len + sizeof(head) <= RDMA_CONTROL_MAX_BUFFER);
+    ret = qemu_rdma_post_send_control(rdma, 
+                                    (uint8_t *)(&(smc_info->pml_round_prefetched_num)),
+                                    &head);
+    if (ret < 0) {
+        SMC_ERR("qemu_rdma_post_send_control() failed to send the number of"
+                "the prefetched pages in each round to the src");
+        return ret;
+    }
     return 0;
 }
 

@@ -1684,6 +1684,8 @@ void mc_process_incoming_checkpoints_if_requested(QEMUFile *f)
                     SMC_LOG(PML, "pml_round_prefetched_num[%d]=%d", ret,
                             glo_smc_info.pml_round_prefetched_num[ret]);
             }
+            /* Send the number of the prefetched pages in each round to the src */
+            smc_pml_send_round_prefetched_num(f_opaque, &glo_smc_info);
 #endif
 
 apply_checkpoint:

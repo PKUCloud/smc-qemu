@@ -109,7 +109,8 @@ static void smc_superset_resize(SMCSuperSet *smc_superset, int new_cap)
     uint8_t *data;
     SMCSet *old_subset, *new_subset;
     int i;
-    
+
+    SMC_ASSERT(new_cap <= SMC_PML_PREFETCH_ROUND_LIMIT);
     SMC_ASSERT(new_cap > smc_superset->cap);
     data = (uint8_t *)g_malloc0(new_cap * sizeof(SMCSet));
     for (i = 0; i < new_cap; i++) {

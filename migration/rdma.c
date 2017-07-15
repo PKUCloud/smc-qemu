@@ -5135,6 +5135,10 @@ int smc_pml_prefetch_dirty_pages(void *opaque, SMCInfo *smc_info)
         signal = ret;
     } 
     SMC_LOG(PML, "fetch %d pages, recv signal %d", pages, signal);
+    smc_info->pml_round_prefetched_num[smc_info->pml_prefetch_pages.nb_subsets] = pages;
+    SMC_LOG(PML, "pml_round_prefetched_num[%d]=%d",
+            smc_info->pml_prefetch_pages.nb_subsets,
+            smc_info->pml_round_prefetched_num[smc_info->pml_prefetch_pages.nb_subsets]);
 
 handle_signal:
     /* handle prefetch signal */

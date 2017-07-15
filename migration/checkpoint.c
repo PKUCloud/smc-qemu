@@ -1654,8 +1654,9 @@ void mc_process_incoming_checkpoints_if_requested(QEMUFile *f)
             }
 #endif
 #ifdef SMC_PML_PREFETCH
+            /* only need to reset the whole pml_prefetch_pages after receiving a checkpoint*/
+            smc_pml_prefetch_pages_reset(&glo_smc_info);
             while (true) {
-                smc_pml_prefetch_pages_reset(&glo_smc_info);
                 smc_pml_backup_pages_reset(&glo_smc_info);
                 smc_pml_prefetched_map_reset(&glo_smc_info);
                 
@@ -1678,6 +1679,10 @@ void mc_process_incoming_checkpoints_if_requested(QEMUFile *f)
                 }
                 smc_set_state(&glo_smc_info, SMC_STATE_PREFETCH_DONE);
                 smc_pml_prefetch_pages_next_subset(&glo_smc_info);
+            }
+            for (ret = 0; ret <= glo_smc_info.pml_prefetch_pages.nb_subsets; ret++) {
+                    SMC_LOG(PML, "pml_round_prefetched_num[%d]=%d", ret,
+                            glo_smc_info.pml_round_prefetched_num[ret]);
             }
 #endif
 

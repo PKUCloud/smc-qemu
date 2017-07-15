@@ -87,6 +87,7 @@ typedef struct SMCBackupPage {
 
 #define SMC_FETCH_CACHE_CAP             3000
 #define SMC_FETCH_CACHE_SOFT_CAP        3000
+#define SMC_PML_PREFETCH_ROUND_LIMIT    100
 
 typedef struct SMCInfo {
     bool init;
@@ -112,6 +113,8 @@ typedef struct SMCInfo {
     uint64_t nr_checkpoints;
     bool enable_incheckpoint_bitmap;
     bool need_clear_incheckpoint_bitmap;
+    /* store the number of prefetched pages in each round */
+    uint32_t pml_round_prefetched_num[SMC_PML_PREFETCH_ROUND_LIMIT];
 } SMCInfo;
 
 extern SMCInfo glo_smc_info;

@@ -4351,6 +4351,52 @@ int smc_recv_prefetch_info(void *opaque, SMCInfo *smc_info,
     return 0;
 }
 
+int smc_pml_recv_round_prefetched_num(void *opaque, SMCInfo *smc_info)
+{
+    QEMUFileRDMA *rfile = opaque;
+    RDMAContext *rdma = rfile->rdma;
+    RDMAControlHeader resp;
+    int ret;
+    RDMAWorkRequestData *req_data;
+    int nb_round;
+    int i;
+    uint32_t *data_recv;
+
+    req_data = &rdma->wr_data[RDMA_WRID_READY];
+    /* Block and wait for the round prefetched num info. */
+    ret = qemu_rdma_exchange_get_response(rdma, &resp,
+                                          SMC_PML_RDMA_CONTROL_PREFETCHED_NUM,
+                                          RDMA_WRID_READY);
+    if (ret < 0) {
+        SMC_ERR("qemu_rdma_exchange_get_response() failed to recv "
+                "round prefetched num info");
+        return ret;
+    }
+    qemu_rdma_move_header(rdma, RDMA_WRID_READY, &resp);
+
+    /* Post a new RECV work request */
+    ret = qemu_rdma_post_recv_control(rdma, RDMA_WRID_READY);
+    if (ret < 0) {
+        SMC_ERR("qemu_rdma_post_recv_control() failed");
+        return ret;
+    }
+
+    nb_round = resp.len / sizeof(uint32_t);
+    data_recv = (uint32_t *)(req_data->control_curr);
+    for (i = 0; i < nb_round; i++) {
+        smc_info->pml_round_prefetched_num[i] = *data_recv;
+        ++data_recv;
+        SMC_LOG(PML, "pml_round_prefetched_num[%d]=%d", i,
+                smc_info->pml_round_prefetched_num[i]);
+    }
+
+    /* Clean the wr_data[] control message buffer */
+    req_data->control_len = 0;
+    req_data->control_curr = req_data->control + sizeof(resp);
+
+    return 0;
+}
+
 static int smc_rdma_send_prefetch_info(RDMAContext *rdma, SMCInfo *smc_info)
 {
     RDMAControlHeader resp;
@@ -4425,7 +4471,7 @@ int smc_pml_send_round_prefetched_num(void *opaque, SMCInfo *smc_info)
     RDMAControlHeader head = { .type = SMC_PML_RDMA_CONTROL_PREFETCHED_NUM,
                                .repeat = 1 };
     int ret;
-    int nb_round = smc_info->pml_prefetch_pages.nb_subsets;
+    int nb_round = smc_info->pml_prefetch_pages.nb_subsets + 1;
     //RDMAWorkRequestData *req_data = &rdma->wr_data[RDMA_WRID_READY];
 
     SMC_LOG(PML, "send SMC_PML_RDMA_CONTROL_PREFETCHED_NUM of %d rounds", nb_round);

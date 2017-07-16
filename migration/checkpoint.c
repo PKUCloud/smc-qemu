@@ -1328,6 +1328,7 @@ static void *mc_thread(void *opaque)
             smc_pml_send_prefetch_signal(f_opaque, (prefetch_round == 1));
             --prefetch_round;
         } while (prefetch_round > 0);
+        smc_pml_recv_round_prefetched_num(f_opaque, &glo_smc_info);
         
 #elif defined(SMC_PREFETCH)
         if (wait_time) {

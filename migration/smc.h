@@ -188,6 +188,9 @@ SMCPMLPrefetchPage *smc_pml_prefetch_pages_info(SMCInfo *smc_info);
 SMCPMLPrefetchPage *smc_pml_prefetch_pages_get_idex(SMCInfo *smc_info,
                                              int superset_idx, int subset_idx);
 int smc_pml_prefetch_pages_count(SMCInfo *smc_info, int superset_idx);
+int smc_pml_persist_unprefetched_pages(SMCInfo *smc_info);
+void smc_pml_set_bitmap_through_offset(uint64_t block_offset,
+                                                    uint64_t offset);
 
 static inline int smc_dirty_pages_count(SMCInfo *smc_info)
 {

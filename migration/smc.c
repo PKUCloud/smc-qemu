@@ -685,3 +685,33 @@ int smc_pml_prefetch_pages_count(SMCInfo *smc_info, int superset_idx)
     return subset->nb_eles;
 }
 
+/* persist all the unprefetched pages accroding the pml_round_prefetched_num[] */
+int smc_pml_persist_unprefetched_pages(SMCInfo *smc_info)
+{
+    SMCSuperSet *superset = &(smc_info->pml_prefetch_pages);
+    SMCSet *subset;
+    int nb_round = superset->nb_subsets;
+    int round_idx;
+    int page_idx;
+    SMCPMLPrefetchPage *unprefetched_page;
+
+    SMC_ASSERT(nb_round == SMC_PML_PREFETCH_ROUND);
+    for (round_idx = 0; round_idx < nb_round; round_idx++) {
+        subset = (SMCSet *)smc_superset_get_idex(superset, round_idx);
+        SMC_LOG(PML, "Round %d: should prefetch %d pages, but we prefetch %d"
+                " pages actually, remains %d pages", round_idx, subset->nb_eles,
+                smc_info->pml_round_prefetched_num[round_idx],
+                subset->nb_eles - smc_info->pml_round_prefetched_num[round_idx]);
+
+        page_idx = smc_info->pml_round_prefetched_num[round_idx];
+
+        while (page_idx < subset->nb_eles) {
+            unprefetched_page = smc_pml_prefetch_pages_get_idex(smc_info,
+                                                        round_idx, page_idx);
+            smc_pml_set_bitmap_through_offset(unprefetched_page->block_offset,
+                                              unprefetched_page->offset);
+            ++page_idx;
+        }
+    }
+    return 0;
+}

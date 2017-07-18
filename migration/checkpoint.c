@@ -1329,6 +1329,7 @@ static void *mc_thread(void *opaque)
             --prefetch_round;
         } while (prefetch_round > 0);
         smc_pml_recv_round_prefetched_num(f_opaque, &glo_smc_info);
+        smc_pml_persist_unprefetched_pages(&glo_smc_info);
         
 #elif defined(SMC_PREFETCH)
         if (wait_time) {

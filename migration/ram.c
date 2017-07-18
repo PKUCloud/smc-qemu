@@ -565,10 +565,11 @@ ram_addr_t smc_pml_prefetch_bitmap_find_and_reset_dirty(MemoryRegion *mr,
         if (glo_smc_info.enable_incheckpoint_bitmap && 
             test_bit(next, smc_pml_incheckpoint_bitmap)) {
             *in_checkpoint = true;
-            SMC_LOG(PML, "bit %lu is set in smc_pml_incheckpoint_bitmap", next);
+            SMC_LOG(PML, "bit %lu has been set in smc_pml_incheckpoint_bitmap", next);
         }
         else {
             *in_checkpoint = false;
+            SMC_LOG(PML, "bit %lu hasn't been set in smc_pml_incheckpoint_bitmap", next);
         }
         smc_pml_prefetch_pages--;
     }
@@ -642,7 +643,8 @@ static void migration_bitmap_sync(void)
     rcu_read_unlock();
 
 #ifdef SMC_PML_PREFETCH
-    SMC_LOG(PML, "This checkpoint has %" PRIu64 " dirty pages in toatl",
+    SMC_LOG(PML, "If only count the dirty pages when making checkpoint,"
+            " this checkpoint has %" PRIu64 " dirty pages.",
             migration_dirty_pages);
 #endif
 
@@ -1110,11 +1112,22 @@ static void smc_pml_ram_find_and_prefetch_block(void)
                 break;
             }
         } else {
-            smc_pml_prefetch_pages_insert(&glo_smc_info, block->offset, offset, 
+            smc_pml_prefetch_pages_insert(&glo_smc_info, block->offset, offset,
                                           in_checkpoint, TARGET_PAGE_SIZE);
         }    
     }
 }	
+
+/* Set the corresponding bit in migration_bitmap through the page offset */
+void smc_pml_set_bitmap_through_offset(uint64_t block_offset,
+                                                    uint64_t offset)
+{
+    unsigned long nr = (block_offset >> TARGET_PAGE_BITS) +
+                         (offset >> TARGET_PAGE_BITS);
+    set_bit(nr, migration_bitmap);
+    SMC_LOG(PML, "set bit %lu in migration_bitmap through the page block_offset=%"
+            PRIu64 " offset=%" PRIu64, nr, block_offset, offset);
+}
 
 /* Called with iothread lock held, to protect ram_list.dirty_memory[] */
 static void smc_pml_prefetch_kvm_bitmap_sync(void)

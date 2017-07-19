@@ -4186,7 +4186,17 @@ int smc_pml_recv_prefetch_info(void *opaque, SMCInfo *smc_info)
     RDMAWorkRequestData *req_data = &(rdma->wr_data[RDMA_WRID_READY]);
     int total_len = -1;
     int pages_to_save;
-    
+
+    /* Post a Receive Request before recv the prefetch info to recv signals
+       *  after receiving the prefetch info.
+       */
+    ret = qemu_rdma_post_recv_control(rdma, RDMA_WRID_CONTROL);
+    if (ret) {
+        SMC_ERR("qemu_rdma_post_recv_control() failed to post RR on "
+                "RDMA_WRID_CONTROL");
+        return ret;
+    }
+
     SMC_LOG(PML, "start to receive the info of the dirty pages "
             "which should be prefetched from the master");
     do {
@@ -4214,16 +4224,6 @@ int smc_pml_recv_prefetch_info(void *opaque, SMCInfo *smc_info)
     req_data->control_len = 0;
     req_data->control_curr = req_data->control + sizeof(head);
     SMC_LOG(PML, "receive %d prefetch pages in total", nb_pages);
-
-    /* Post a Receive Request before recv the prefetch info to recv signals
-       *  after receiving the prefetch info.
-       */
-    ret = qemu_rdma_post_recv_control(rdma, RDMA_WRID_READY);
-    if (ret) {
-        SMC_ERR("qemu_rdma_post_recv_control() failed to post RR on "
-                "RDMA_WRID_DATA");
-        return ret;
-    }
     
     return nb_pages;
 }
@@ -4562,7 +4562,7 @@ static int smc_try_recv_prefetch_cmd(RDMAContext *rdma, SMCInfo *smc_info)
 }
 
 /* Before calling this function, there are two RR in queue: RDMA_WRID_READY and
- * RDMA_WRID_READY.
+ * RDMA_WRID_CONTROL.
  * return vlaue:
  * - 0, haven't received the next prefetch signal yet;
  * - > 0, received the next prefetch signal, return the type of message;
@@ -4586,14 +4586,14 @@ static int smc_pml_try_recv_prefetch_signal(RDMAContext *rdma, SMCInfo *smc_info
         return 0;
     }
 
-    if (wr_id != RDMA_WRID_RECV_CONTROL + RDMA_WRID_READY) {
+    if (wr_id != RDMA_WRID_RECV_CONTROL + RDMA_WRID_CONTROL) {
         SMC_ERR("recv wrong wr_id=%" PRIu64, wr_id);
         return -1;
     }
 
     /* Process the prefetch cmd */
-    network_to_control((void *)rdma->wr_data[RDMA_WRID_READY].control);
-    memcpy(&head, rdma->wr_data[RDMA_WRID_READY].control, sizeof(head));
+    network_to_control((void *)rdma->wr_data[RDMA_WRID_CONTROL].control);
+    memcpy(&head, rdma->wr_data[RDMA_WRID_CONTROL].control, sizeof(head));
 
     SMC_LOG(PML, "recv next prefetch signal=%d", head.type);
 
@@ -4627,7 +4627,7 @@ static int smc_block_recv_prefetch_cmd(RDMAContext *rdma, SMCInfo *smc_info)
 }
 
 /* Before calling this function, there are two RR in queue: RDMA_WRID_READY and
- * RDMA_WRID_READY.
+ * RDMA_WRID_CONTROL.
  * Block until receive the prefetch signal, then return the type of the message.
  */
 static int smc_pml_block_recv_prefetch_signal(RDMAContext *rdma, SMCInfo *smc_info)
@@ -4636,7 +4636,7 @@ static int smc_pml_block_recv_prefetch_signal(RDMAContext *rdma, SMCInfo *smc_in
     int ret;
 
     ret = qemu_rdma_exchange_get_response(rdma, &head, RDMA_CONTROL_NONE,
-                                          RDMA_WRID_READY);
+                                          RDMA_WRID_CONTROL);
     if (ret < 0) {
         SMC_ERR("qemu_rdma_exchange_get_response() failed to recv on "
                 "RDMA_WRID_READY");
@@ -4843,10 +4843,10 @@ static int smc_pml_try_ack_rdma_read(RDMAContext *rdma, SMCInfo *smc_info,
 
     SMC_LOG(PML, "got wr_id=%" PRIu64, wr_id);
     wr_id_masked = wr_id & RDMA_WRID_TYPE_MASK;
-    if (wr_id_masked == RDMA_WRID_RECV_CONTROL + RDMA_WRID_READY) {
+    if (wr_id_masked == RDMA_WRID_RECV_CONTROL + RDMA_WRID_CONTROL) {
         /* Recv the next prefetch signal */
-        network_to_control((void *)rdma->wr_data[RDMA_WRID_READY].control);
-        memcpy(&head, rdma->wr_data[RDMA_WRID_READY].control, sizeof(head));
+        network_to_control((void *)rdma->wr_data[RDMA_WRID_CONTROL].control);
+        memcpy(&head, rdma->wr_data[RDMA_WRID_CONTROL].control, sizeof(head));
 
         SMC_ASSERT((head.type == SMC_PML_RDMA_CONTROL_STOP_PREFETCH) || 
                    (head.type == SMC_PML_RDMA_CONTROL_NEXT_PREFETCH));

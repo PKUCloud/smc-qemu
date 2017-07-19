@@ -536,7 +536,6 @@ ram_addr_t migration_bitmap_find_and_reset_dirty(MemoryRegion *mr,
 #ifdef SMC_PML_PREFETCH
         if (smc_is_init(&glo_smc_info) && glo_smc_info.enable_incheckpoint_bitmap) {
             set_bit(next, smc_pml_incheckpoint_bitmap);
-            SMC_LOG(PML, "set bit %lu in smc_pml_incheckpoint_bitmap", next);
         }
 #endif            
         migration_dirty_pages--;
@@ -1125,8 +1124,7 @@ void smc_pml_set_bitmap_through_offset(uint64_t block_offset,
     unsigned long nr = (block_offset >> TARGET_PAGE_BITS) +
                          (offset >> TARGET_PAGE_BITS);
     set_bit(nr, migration_bitmap);
-    SMC_LOG(PML, "set bit %lu in migration_bitmap through the page block_offset=%"
-            PRIu64 " offset=%" PRIu64, nr, block_offset, offset);
+    migration_dirty_pages++;
 }
 
 /* Called with iothread lock held, to protect ram_list.dirty_memory[] */

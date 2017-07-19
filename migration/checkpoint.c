@@ -1301,7 +1301,9 @@ static void *mc_thread(void *opaque)
 #if defined(SMC_PML_PREFETCH)
         prefetch_round = SMC_PML_PREFETCH_ROUND;
         SMC_LOG(PML, "We have %" PRIu64 "ms remains as wait_time.", wait_time);
-        wait_time = (wait_time) / (prefetch_round + 1);
+        //TODO: we should NOT use freq_ms instead of wait_time here!
+        //wait_time = (wait_time) / (prefetch_round + 1);
+        wait_time = (freq_ms) / (prefetch_round + 1);
         if (wait_time) {
             SMC_LOG(PML, "let VM run %" PRIu64 "ms", wait_time);
             s->nr_sleeps++;

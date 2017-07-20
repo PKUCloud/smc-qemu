@@ -151,7 +151,7 @@ static void *smc_set_insert(SMCSet *smc_set, const void *ele)
     new_ele = smc_set->eles + smc_set->nb_eles * smc_set->ele_size;
     memcpy(new_ele, ele, smc_set->ele_size);
     smc_set->nb_eles++;
-    SMC_LOG(PML, "after insert, there are %d pages in total", smc_set->nb_eles);
+    SMC_LOG(GEN, "after insert, there are %d pages in total", smc_set->nb_eles);
 
     return new_ele;
 }
@@ -273,7 +273,7 @@ void smc_pml_prefetch_pages_insert(SMCInfo *smc_info,
                               };
     
     SMC_ASSERT(smc_info->init);
-    SMC_LOG(PML, "add SMCPMLPrefetchPage which block_offset=%" PRIu64 " offset=%"
+    SMC_LOG(GEN, "add SMCPMLPrefetchPage which block_offset=%" PRIu64 " offset=%"
             PRIu64 " size=%" PRIu32 " in_checkpoint=%d", 
             block_offset, offset, size, in_checkpoint);
     
@@ -292,7 +292,7 @@ void smc_pml_prefetch_pages_reset(SMCInfo *smc_info)
 {
     SMC_ASSERT(smc_info->init);
     smc_superset_reset(&smc_info->pml_prefetch_pages);
-    SMC_LOG(PML, "after reset pml_prefetch_pages subset=%d", 
+    SMC_LOG(GEN, "after reset pml_prefetch_pages subset=%d", 
                 smc_info->pml_prefetch_pages.nb_subsets);
 }
 
@@ -307,7 +307,7 @@ void smc_dirty_pages_insert_from_buf(SMCInfo *smc_info, const void *buf,
 void smc_pml_prefetch_pages_insert_from_buf(SMCInfo *smc_info, 
                                      const void *buf, int nb_pages)
 {
-    SMC_LOG(PML, "copy %d prefetch pages info into pml_prefetch_pages", nb_pages);
+    SMC_LOG(GEN, "copy %d prefetch pages info into pml_prefetch_pages", nb_pages);
     SMC_ASSERT(smc_info->init);
     smc_superset_insert_from_buf(&smc_info->pml_prefetch_pages, 
                                  smc_info->pml_prefetch_pages.nb_subsets, 
@@ -334,7 +334,7 @@ SMCFetchPage *smc_prefetch_pages_insert(SMCInfo *smc_info,
                          };
 
     SMC_ASSERT(smc_info->init);
-    SMC_LOG(PML, "add block_offset=%" PRIu64 " offset=%" PRIu64
+    SMC_LOG(GEN, "add block_offset=%" PRIu64 " offset=%" PRIu64
             " size=%" PRIu32, block_offset, offset, size);
     return (SMCFetchPage *)smc_set_insert(&smc_info->prefetch_pages, &page);
 }
@@ -348,7 +348,7 @@ void smc_prefetch_pages_reset(SMCInfo *smc_info)
 
 void smc_pml_prefetch_pages_next_subset(SMCInfo *smc_info)
 {
-    SMC_LOG(PML, "prefetch_pages subset=%d", 
+    SMC_LOG(GEN, "prefetch_pages subset=%d", 
             smc_info->pml_prefetch_pages.nb_subsets);
     SMC_ASSERT(smc_info->init);
     smc_info->pml_prefetch_pages.nb_subsets++;
@@ -356,7 +356,7 @@ void smc_pml_prefetch_pages_next_subset(SMCInfo *smc_info)
         smc_superset_resize(&smc_info->pml_prefetch_pages, 
                             smc_info->pml_prefetch_pages.nb_subsets + 1);
     }
-    SMC_LOG(PML, "prefetch_pages new subset=%d", 
+    SMC_LOG(GEN, "prefetch_pages new subset=%d", 
             smc_info->pml_prefetch_pages.nb_subsets);
 }
 
@@ -382,7 +382,7 @@ void smc_pml_backup_pages_reset(SMCInfo *smc_info)
     int nb_pages = smc_info->pml_backup_pages.nb_eles;
     int i;
 
-    SMC_LOG(PML, "pml_backup_pages=%d", nb_pages);
+    SMC_LOG(GEN, "pml_backup_pages=%d", nb_pages);
     SMC_ASSERT(smc_info->init);
     for (i = 0; i < nb_pages; ++i) {
         g_free(page->data);
@@ -419,7 +419,7 @@ void smc_pml_backup_pages_insert(SMCInfo *smc_info, uint64_t block_offset,
                               .host_addr = data,
                             };
     SMC_ASSERT(smc_info->init);
-    SMC_LOG(PML, "add block_offset=%" PRIu64 " offset=%" PRIu64
+    SMC_LOG(GEN, "add block_offset=%" PRIu64 " offset=%" PRIu64
             " size=%" PRIu64, block_offset, offset, size);
     page.data = (uint8_t *)g_malloc(size);
     memcpy(page.data, data, size);
@@ -455,7 +455,7 @@ void *smc_pml_backup_pages_insert_empty(SMCInfo *smc_info,
                               .host_addr = host_addr,
                             };
     SMC_ASSERT(smc_info->init);
-    SMC_LOG(PML, "add backup_page block_offset=%" PRIu64 " offset=%" PRIu64
+    SMC_LOG(GEN, "add backup_page block_offset=%" PRIu64 " offset=%" PRIu64
             " size=%" PRIu64, block_offset, offset, size);
     page.data = (uint8_t *)g_malloc(size);
     smc_set_insert(&smc_info->pml_backup_pages, &page);
@@ -501,7 +501,7 @@ void smc_pml_recover_backup_pages(SMCInfo *smc_info)
     int nb_pages = smc_info->pml_backup_pages.nb_eles;
     int i;
 
-    SMC_LOG(PML, "pml_backup_pages=%d", nb_pages);
+    SMC_LOG(GEN, "pml_backup_pages=%d", nb_pages);
     for (i = 0; i < nb_pages; ++i) {
         memcpy(page->host_addr, page->data, page->size);
         g_free(page->data);

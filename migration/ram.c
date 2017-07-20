@@ -564,11 +564,11 @@ ram_addr_t smc_pml_prefetch_bitmap_find_and_reset_dirty(MemoryRegion *mr,
         if (glo_smc_info.enable_incheckpoint_bitmap && 
             test_bit(next, smc_pml_incheckpoint_bitmap)) {
             *in_checkpoint = true;
-            SMC_LOG(PML, "bit %lu has been set in smc_pml_incheckpoint_bitmap", next);
+            //SMC_LOG(PML, "bit %lu has been set in smc_pml_incheckpoint_bitmap", next);
         }
         else {
             *in_checkpoint = false;
-            SMC_LOG(PML, "bit %lu hasn't been set in smc_pml_incheckpoint_bitmap", next);
+            //SMC_LOG(PML, "bit %lu hasn't been set in smc_pml_incheckpoint_bitmap", next);
         }
         smc_pml_prefetch_pages--;
     }
@@ -635,6 +635,11 @@ static void migration_bitmap_sync(void)
 
     dirty_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
 
+#ifdef SMC_PML_PREFETCH
+        SMC_LOG(PML, "This checkpoint has %" PRIu64 
+                " unprefetched dirty pages.", migration_dirty_pages);
+#endif
+
     rcu_read_lock();
     QLIST_FOREACH_RCU(block, &ram_list.blocks, next) {
         migration_bitmap_sync_range(block->mr->ram_addr, block->used_length);
@@ -642,8 +647,7 @@ static void migration_bitmap_sync(void)
     rcu_read_unlock();
 
 #ifdef SMC_PML_PREFETCH
-    SMC_LOG(PML, "If only count the dirty pages when making checkpoint,"
-            " this checkpoint has %" PRIu64 " dirty pages.",
+    SMC_LOG(PML, "This checkpoint has %" PRIu64 " dirty pages in total.",
             migration_dirty_pages);
 #endif
 
@@ -1123,8 +1127,9 @@ void smc_pml_set_bitmap_through_offset(uint64_t block_offset,
 {
     unsigned long nr = (block_offset >> TARGET_PAGE_BITS) +
                          (offset >> TARGET_PAGE_BITS);
-    set_bit(nr, migration_bitmap);
-    migration_dirty_pages++;
+    if (!test_and_set_bit(nr, migration_bitmap)) {
+        migration_dirty_pages++;
+    }
 }
 
 /* Called with iothread lock held, to protect ram_list.dirty_memory[] */

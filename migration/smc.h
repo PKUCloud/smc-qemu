@@ -12,7 +12,10 @@
 #define SMC_DIRTY_FLAGS_IN_CHECKPOINT   0x1U
 
 #define SMC_PREFETCH_RECV_TIME          2
-#define SMC_NUM_DIRTY_PAGES_SEND        2000
+/* TODO: this should match the dev_cap.max_qp_wr,
+ * which can be found by using $ ibv_devinfo -v
+ */
+#define SMC_NUM_DIRTY_PAGES_SEND        16351
 #define SMC_PML_PREFETCH_ROUND          2
 
 /* Info about a dirty page within a chunk */

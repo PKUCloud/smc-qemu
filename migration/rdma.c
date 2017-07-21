@@ -572,7 +572,7 @@ static int qemu_rdma_alloc_pd_cq_qp(RDMAContext *rdma, RDMALocalContext *lc)
 
     SMC_LOG(INIT, "create Completion Queue lc->cq[%p]", lc->cq);
 
-    attr.cap.max_send_wr = RDMA_SEND_MAX * 2;
+    attr.cap.max_send_wr = SMC_NUM_DIRTY_PAGES_SEND;
     attr.cap.max_recv_wr = 3;
     attr.cap.max_send_sge = 1;
     attr.cap.max_recv_sge = 1;
@@ -4680,14 +4680,14 @@ static int smc_rdma_read(RDMAContext *rdma, RDMALocalBlock *block,
         SMC_ERR("ibv_post_send() failed ret=%d", ret);
         switch (ret) {
             case EINVAL:
-                SMC_LOG(PML, "Invalid value provided in wr");
+                SMC_ERR("Invalid value provided in wr");
                 break;
             case ENOMEM:
-                SMC_LOG(PML, "Send Queue is full or not enough resources"
+                SMC_ERR("Send Queue is full or not enough resources"
                             " to complete this operation");
                 break;
             case EFAULT:
-                SMC_LOG(PML, "Invalid value provided in qp");
+                SMC_ERR("Invalid value provided in qp");
                 break;
         }
         return -ret;

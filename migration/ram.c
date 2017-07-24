@@ -1445,6 +1445,8 @@ static int ram_save_complete(QEMUFile *f, void *opaque)
 
     migration_bitmap_sync();
 
+    SMC_LOG(SIM, "migration_dirty_pages = %" PRIu64 "", migration_dirty_pages);
+
     ram_control_before_iterate(f, RAM_CONTROL_FINISH);
 
     /* try transferring iterative blocks of memory */

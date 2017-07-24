@@ -9,11 +9,11 @@ extern FILE *smc_log_file;
 
 #ifdef DEBUG_SMC
 enum {
-    SMC_DB_GEN, SMC_DB_INIT, SMC_DB_STREAM, SMC_DB_FETCH, SMC_DB_PML,
+    SMC_DB_GEN, SMC_DB_INIT, SMC_DB_STREAM, SMC_DB_FETCH, SMC_DB_PML, SMC_DB_SIM,
 };
 #define SMC_DBBIT(x)    (1 << SMC_DB_##x)
 //static int smc_dbflags = 0;
-static int smc_dbflags = SMC_DBBIT(PML);
+static int smc_dbflags = SMC_DBBIT(SIM);
 
 #define SMC_LOG(what, fmt, ...) do { \
     if (smc_dbflags & SMC_DBBIT(what)) { \

@@ -105,7 +105,7 @@ static void flush_trace_buffer(void) {
 #define MC_SLAB_BUFFER_SIZE     (5UL * 1024UL * 1024UL) /* empirical */
 #define MC_DEV_NAME_MAX_SIZE    256
 
-#define MC_DEFAULT_CHECKPOINT_FREQ_MS 40 /* too slow, but best for now */
+#define MC_DEFAULT_CHECKPOINT_FREQ_MS 5 /* too slow, but best for now */
 #define CALC_MAX_STRIKES()                                           \
     do {  max_strikes = (max_strikes_delay_secs * 1000) / freq_ms; } \
     while (0)
@@ -791,7 +791,7 @@ out:
 }
 
 /*
- * Stop the VM, capture the dirty pages from KVM,
+ * Do NOT stop the VM, capture the dirty pages from KVM,
  * then synchronise the dirty bitmap to ,
  * re-activate the VM as soon as possible,
  * 
@@ -799,11 +799,12 @@ out:
 static void smc_pml_capture_dirty_pages(MCParams *mc, MigrationState *s)
 {
     SMC_LOG(PML, "stop the VM and then capture dirty pages");
-    qemu_mutex_lock_iothread();
-    vm_stop_force_state(RUN_STATE_CHECKPOINTING);
+    //Do NOT need to stop VM, because we do not need accurate dirty information
+    //qemu_mutex_lock_iothread();
+    //vm_stop_force_state(RUN_STATE_CHECKPOINTING);
     qemu_prefetch_state_begin(mc->staging);
-    vm_start();
-    qemu_mutex_unlock_iothread();
+    //vm_start();
+    //qemu_mutex_unlock_iothread();
     //let VM go as soon as possible
     qemu_prefetch_state_complete(mc->staging);
 }
@@ -1373,6 +1374,13 @@ static void *mc_thread(void *opaque)
                 " checkpoints %" PRId64 "\n",
                 s->bytes_xfer, s->xmit_time, s->downtime, s->ram_copy_time,
                 wait_time, fetch_speed, fetch_time, s->checkpoints);
+        SMC_LOG(SIM, "Checkpoints %" PRId64 " "
+                "total fetch pages = %d "
+                "bytes_xfer = %ld "
+                "fetch_time = %" PRId64 " "
+                "ram_copy_time %" PRId64 " ",
+                s->checkpoints, smc_dirty_pages_count(&glo_smc_info),
+                s->bytes_xfer, s->xmit_time, s->ram_copy_time);
 
         if (end_time >= initial_time + 1000) {
             printf("[SMC]bytes %ld xmit_time %" PRId64 " downtime %" PRIu64

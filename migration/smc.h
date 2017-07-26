@@ -132,7 +132,7 @@ void smc_init(SMCInfo *smc_info, void *opaque);
 void smc_exit(SMCInfo *smc_info);
 void smc_dirty_pages_insert(SMCInfo *smc_info, uint64_t block_offset,
                             uint64_t offset, uint32_t size, uint32_t flags);
-void smc_pml_prefetch_pages_insert(SMCInfo *smc_info, 
+SMCPMLPrefetchPage *smc_pml_prefetch_pages_insert(SMCInfo *smc_info,
                                             uint64_t block_offset,
                                             uint64_t offset, 
                                             bool in_checkpoint, uint32_t size);

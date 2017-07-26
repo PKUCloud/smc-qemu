@@ -270,7 +270,7 @@ void smc_dirty_pages_insert(SMCInfo *smc_info, uint64_t block_offset,
     smc_set_insert(&smc_info->dirty_pages, &page);
 }
 
-void smc_pml_prefetch_pages_insert(SMCInfo *smc_info, 
+SMCPMLPrefetchPage *smc_pml_prefetch_pages_insert(SMCInfo *smc_info,
                                             uint64_t block_offset,
                                             uint64_t offset, 
                                             bool in_checkpoint, uint32_t size)
@@ -286,7 +286,7 @@ void smc_pml_prefetch_pages_insert(SMCInfo *smc_info,
             PRIu64 " size=%" PRIu32 " in_checkpoint=%d", 
             block_offset, offset, size, in_checkpoint);
     
-    smc_superset_insert(&smc_info->pml_prefetch_pages, 
+    return (SMCPMLPrefetchPage *)smc_superset_insert(&smc_info->pml_prefetch_pages,
                         smc_info->pml_prefetch_pages.nb_subsets, &page);
 }
 

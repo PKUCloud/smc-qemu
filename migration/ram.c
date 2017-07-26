@@ -1098,6 +1098,10 @@ static void smc_pml_ram_find_and_prefetch_block(void)
     ram_addr_t offset;
     MemoryRegion *mr;
     bool in_checkpoint = false;
+    SMCPMLPrefetchedPageCounter *prefetched_page_counter;
+    SMCPMLPrefetchPage *prefetch_page;
+    uint64_t page_counter;
+    uint64_t threshold = glo_smc_info.pml_prefetch_pages.nb_subsets / 2;
 
     block = QLIST_FIRST_RCU(&ram_list.blocks);
     offset = 0;
@@ -1115,8 +1119,25 @@ static void smc_pml_ram_find_and_prefetch_block(void)
                 break;
             }
         } else {
-            smc_pml_prefetch_pages_insert(&glo_smc_info, block->offset, offset,
-                                          in_checkpoint, TARGET_PAGE_SIZE);
+            prefetched_page_counter = smc_pml_prefetched_map_lookup(&glo_smc_info,
+                                                            block->offset + offset);
+            if (prefetched_page_counter != NULL) {
+                /* This page has been prefetched during prior prefetching */
+                page_counter = prefetched_page_counter->counter;
+                if (page_counter > threshold) {
+                    /* If the prefetched times of this page is above the threshold, do NOT prefetch it */
+                    SMC_LOG(PML, "Skipping page_offset=%" PRIu64
+                            " because prefetched_counter=%" PRIu64
+                            " is above the threshold=%" PRIu64,
+                            offset, page_counter, threshold);
+                    continue;
+                }
+            }
+            /* prefetch this page and then insert it into the pml_prefetched_map */
+            prefetch_page = smc_pml_prefetch_pages_insert(&glo_smc_info, block->offset,
+                                            offset, in_checkpoint, TARGET_PAGE_SIZE);
+            smc_pml_prefetched_map_insert(&glo_smc_info, block->offset + offset,
+                                            prefetch_page);
         }    
     }
 }	

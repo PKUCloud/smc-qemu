@@ -4914,7 +4914,9 @@ static int smc_pml_do_prefetch_page(RDMAContext *rdma, SMCInfo *smc_info,
     uint8_t *host_addr;
     int ret = 0;
     bool in_checkpoint;
-    SMCPMLPrefetchPage *prefetched_page;
+    SMCPMLPrefetchedPageCounter *prefetched_page_counter;
+    uint64_t page_counter;
+    uint64_t threshold = smc_info->pml_prefetch_pages.nb_subsets / 2;
 
     SMC_LOG(PML, "prefetch page block_offset=%" PRIu64 " offset=%" PRIu64
             " size=%" PRIu32 " in_checkpoint=%d", page->block_offset,
@@ -4925,30 +4927,36 @@ static int smc_pml_do_prefetch_page(RDMAContext *rdma, SMCInfo *smc_info,
     host_addr = block->local_host_addr + page->offset;
     in_checkpoint = page->in_checkpoint;
 
-    if (in_checkpoint) {
-        /* The last correct version of this page has been stored in the
-              * last checkpoint. We just need to insert this page in the hash_table: 
-              * pml_prefetched_map so that we can tell if this page has been prefetched
-              * during commiting this checkpoint (apply checkpoint). 
-              */
-        smc_pml_prefetched_map_insert(smc_info, page->block_offset + page->offset,
-                                      page);
-        
-    } else {
-        /* Test if the original version of this page has been COWed during 
-               * prior prefetching. 
-               */
-        prefetched_page = smc_pml_prefetched_map_lookup(smc_info, 
+    prefetched_page_counter = smc_pml_prefetched_map_lookup(smc_info,
                                               page->block_offset + page->offset);
-        if (prefetched_page == NULL) {
-            /* We need to COW the original version of this page into 
-                      * pml_backup_pages list.
-                      */
+
+    if (prefetched_page_counter == NULL) {
+        /* This page has NOT been prefetched */
+        if (!in_checkpoint) {
+            /* If this page has NOT been stored in the last checkpoint. */
             smc_pml_backup_pages_insert(smc_info, page->block_offset, page->offset,
                                 page->size, host_addr);
         }
+    } else {
+        /* This page has already been prefetched, and therefore,
+         * the original version of this page has been COWed during
+         * prior prefetching.
+         */
+        page_counter = prefetched_page_counter->counter;
+        if (page_counter > threshold) {
+            /* If the prefetched times of this page is above the threshold, do NOT prefetch it */
+            SMC_LOG(PML, "Skipping page_offset=%" PRIu64
+                    " because prefetched_counter=%" PRIu64
+                    " is above the threshold=%" PRIu64,
+                    page->offset, page_counter, threshold);
+            return 1;
+        }
     }
-    
+    /* We just need to insert this page in the hash_table:
+     * pml_prefetched_map so that we can tell if this page has been prefetched
+     * during commiting this checkpoint (apply checkpoint).
+     */
+    smc_pml_prefetched_map_insert(smc_info, page->block_offset + page->offset, page);
     ret = smc_rdma_read(rdma, block, page->offset, page->size, page_idx);
     return ret;
 }
@@ -5072,7 +5080,10 @@ static int smc_pml_do_prefetch_dirty_pages(RDMAContext *rdma, SMCInfo *smc_info,
         if ( ret < 0 ) {
             return ret;
         }
-        ++nb_post;
+        if (ret == 0){
+            /* If we really prefetch this page */
+            ++nb_post;
+        }
         ++idx;
 
         /* Wait here to see if there are any RDMA READ have completed */

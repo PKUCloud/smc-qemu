@@ -16,7 +16,7 @@
  * which can be found by using $ ibv_devinfo -v
  */
 #define SMC_NUM_DIRTY_PAGES_SEND        16351
-#define SMC_PML_PREFETCH_ROUND          2
+#define SMC_PML_PREFETCH_ROUND          10
 
 /* Info about a dirty page within a chunk */
 typedef struct SMCDirtyPage {
@@ -81,6 +81,12 @@ typedef struct SMCBackupPage {
     uint8_t *data;
     uint8_t *host_addr;
 } SMCBackupPage;
+
+/* Info about how many times dose one page already been prefetched */
+typedef struct SMCPMLPrefetchedPageCounter {
+    SMCPMLPrefetchPage *prefetched_page;
+    uint64_t counter;
+} SMCPMLPrefetchedPageCounter;
 
 #define SMC_STATE_RECV_CHECKPOINT       0
 #define SMC_STATE_PREFETCH_START        1
@@ -194,6 +200,7 @@ int smc_pml_prefetch_pages_count(SMCInfo *smc_info, int superset_idx);
 int smc_pml_persist_unprefetched_pages(SMCInfo *smc_info);
 void smc_pml_set_bitmap_through_offset(uint64_t block_offset,
                                                     uint64_t offset);
+void free_prefetched_page_counter(gpointer value);
 
 static inline int smc_dirty_pages_count(SMCInfo *smc_info)
 {
@@ -245,12 +252,22 @@ static inline void smc_pml_prefetched_map_insert(SMCInfo *smc_info,
                                            uint64_t phy_addr, SMCPMLPrefetchPage *page)
 {
     gpointer key = (void *)(uintptr_t)phy_addr;
+    SMCPMLPrefetchedPageCounter *page_counter;
 
     SMC_ASSERT(page);
-    if (g_hash_table_lookup(smc_info->pml_prefetched_map, key) == NULL) {
-        /* if we prefetch the same page twice, then don't insert it in the second time */
-        g_hash_table_insert(smc_info->pml_prefetched_map, key, page);
+    page_counter = g_hash_table_lookup(smc_info->pml_prefetched_map, key);
+    if (page_counter == NULL) {
+        /* if we have not prefetched this same page yet*/
+        page_counter = g_malloc0(sizeof(SMCPMLPrefetchedPageCounter));
+        page_counter->prefetched_page = page;
+        page_counter->counter = 1;
+        g_hash_table_insert(smc_info->pml_prefetched_map, key, page_counter);
+    } else {
+        /* if we have already prefetched this same page */
+        page_counter->counter++;
     }
+    SMC_LOG(PML, "insert to pml_prefetched_map page_offset=%" PRIu64 " counter=%" PRIu64,
+            page->offset, page_counter->counter);
 }
 
 static inline SMCFetchPage *smc_prefetch_map_lookup(SMCInfo *smc_info,
@@ -260,8 +277,8 @@ static inline SMCFetchPage *smc_prefetch_map_lookup(SMCInfo *smc_info,
                                (void *)(uintptr_t)phy_addr);
 }
 
-static inline SMCPMLPrefetchPage *smc_pml_prefetched_map_lookup(SMCInfo *smc_info,
-                                                    uint64_t phy_addr)
+static inline SMCPMLPrefetchedPageCounter *smc_pml_prefetched_map_lookup
+                                            (SMCInfo *smc_info, uint64_t phy_addr)
 {
     return g_hash_table_lookup(smc_info->pml_prefetched_map,
                                (void *)(uintptr_t)phy_addr);

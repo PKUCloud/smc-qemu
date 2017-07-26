@@ -105,7 +105,7 @@ static void flush_trace_buffer(void) {
 #define MC_SLAB_BUFFER_SIZE     (5UL * 1024UL * 1024UL) /* empirical */
 #define MC_DEV_NAME_MAX_SIZE    256
 
-#define MC_DEFAULT_CHECKPOINT_FREQ_MS 5 /* too slow, but best for now */
+#define MC_DEFAULT_CHECKPOINT_FREQ_MS 40 /* too slow, but best for now */
 #define CALC_MAX_STRIKES()                                           \
     do {  max_strikes = (max_strikes_delay_secs * 1000) / freq_ms; } \
     while (0)
@@ -1664,12 +1664,10 @@ void mc_process_incoming_checkpoints_if_requested(QEMUFile *f)
             }
 #endif
 #ifdef SMC_PML_PREFETCH
-            /* only need to reset the whole pml_prefetch_pages after receiving a checkpoint*/
             smc_pml_prefetch_pages_reset(&glo_smc_info);
+            smc_pml_backup_pages_reset(&glo_smc_info);
+            smc_pml_prefetched_map_reset(&glo_smc_info);
             while (true) {
-                smc_pml_backup_pages_reset(&glo_smc_info);
-                smc_pml_prefetched_map_reset(&glo_smc_info);
-                
                 nb_recv_prefetch_pages = smc_pml_recv_prefetch_info(f_opaque,
                                                                 &glo_smc_info);
                 if (nb_recv_prefetch_pages < 0) {

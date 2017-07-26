@@ -1758,7 +1758,7 @@ static inline void *smc_pml_host_addr_with_prefetch(SMCInfo *smc_info, QEMUFile 
                                                 bool *prefetched)
 {
     uint64_t phy_addr;
-    SMCPMLPrefetchPage *prefetch_page;
+    SMCPMLPrefetchedPageCounter *prefetched_page_counter;
     RAMBlock *block;
     void *host_addr;
     void *backup_pages;
@@ -1770,8 +1770,8 @@ static inline void *smc_pml_host_addr_with_prefetch(SMCInfo *smc_info, QEMUFile 
     }
     host_addr = memory_region_get_ram_ptr(block->mr) + offset;
     phy_addr = block->offset + offset;
-    prefetch_page = smc_pml_prefetched_map_lookup(smc_info, phy_addr);
-    if (prefetch_page) {
+    prefetched_page_counter = smc_pml_prefetched_map_lookup(smc_info, phy_addr);
+    if (prefetched_page_counter) {
         SMC_LOG(PML, "phy_adr=%" PRIu64 " has been prefetched", phy_addr);
         backup_pages = smc_pml_backup_pages_insert_empty(smc_info, block->offset,
                                                          offset, TARGET_PAGE_SIZE,

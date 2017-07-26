@@ -198,6 +198,14 @@ static void smc_superset_insert_from_buf(SMCSuperSet *smc_superset,
     smc_set_insert_from_buf(subset, buf, nb_eles);
 }
 
+void free_prefetched_page_counter(gpointer value)
+{
+    SMCPMLPrefetchedPageCounter *page_counter = (SMCPMLPrefetchedPageCounter *)value;
+    SMC_LOG(PML, "Free ele in pml_prefetched_map page_offset=%" PRIu64
+            " counter=%" PRIu64, page_counter->prefetched_page->offset,
+            page_counter->counter);
+    g_free(page_counter);
+}
 
 void smc_init(SMCInfo *smc_info, void *opaque)
 {
@@ -214,7 +222,8 @@ void smc_init(SMCInfo *smc_info, void *opaque)
 #ifdef SMC_PML_PREFETCH
     smc_superset_init(&smc_info->pml_prefetch_pages, sizeof(SMCPMLPrefetchPage));
     smc_set_init(&smc_info->pml_backup_pages, sizeof(SMCPMLBackupPage));
-    smc_info->pml_prefetched_map = g_hash_table_new(g_direct_hash, g_direct_equal);
+    smc_info->pml_prefetched_map = g_hash_table_new_full(g_direct_hash, g_direct_equal,
+                                                    NULL, free_prefetched_page_counter);
 #endif
     smc_info->opaque = opaque;
     smc_info->init = true;

@@ -1689,12 +1689,17 @@ void mc_process_incoming_checkpoints_if_requested(QEMUFile *f)
                 smc_set_state(&glo_smc_info, SMC_STATE_PREFETCH_DONE);
                 smc_pml_prefetch_pages_next_subset(&glo_smc_info);
             }
-            for (ret = 0; ret <= glo_smc_info.pml_prefetch_pages.nb_subsets; ret++) {
-                    SMC_LOG(PML, "pml_round_prefetched_num[%d]=%d", ret,
-                            glo_smc_info.pml_round_prefetched_num[ret]);
-            }
+            //for (ret = 0; ret <= glo_smc_info.pml_prefetch_pages.nb_subsets; ret++) {
+            //        SMC_LOG(PML, "pml_round_prefetched_num[%d]=%d", ret,
+            //                glo_smc_info.pml_round_prefetched_num[ret]);
+            //}
             /* Send the number of the prefetched pages in each round to the src */
-            smc_pml_send_round_prefetched_num(f_opaque, &glo_smc_info);
+            ret = smc_pml_send_round_prefetched_num(f_opaque, &glo_smc_info);
+            if (ret < 0) {
+                need_rollback = true;
+                glo_smc_info.need_rollback = true;
+                goto apply_checkpoint;
+            }
 #endif
 
 apply_checkpoint:

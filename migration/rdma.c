@@ -4188,8 +4188,8 @@ int smc_pml_recv_prefetch_info(void *opaque, SMCInfo *smc_info)
     int pages_to_save;
 
     /* Post a Receive Request before recv the prefetch info to recv signals
-       *  after receiving the prefetch info.
-       */
+     * after receiving the prefetch info.
+     */
     ret = qemu_rdma_post_recv_control(rdma, RDMA_WRID_CONTROL);
     if (ret) {
         SMC_ERR("qemu_rdma_post_recv_control() failed to post RR on "
@@ -4214,8 +4214,8 @@ int smc_pml_recv_prefetch_info(void *opaque, SMCInfo *smc_info)
         }
         pages_to_save = head.len / sizeof(SMCPMLPrefetchPage);
         /* TODO: We should translate the byte order before and after network
-               * transfer.
-               */
+         * transfer.
+         */
         smc_pml_prefetch_pages_insert_from_buf(smc_info,
                                         req_data->control_curr, pages_to_save);
         nb_pages += pages_to_save;

@@ -557,10 +557,10 @@ ram_addr_t smc_pml_prefetch_bitmap_find_and_reset_dirty(MemoryRegion *mr,
     if (next < size) {
         clear_bit(next, smc_pml_prefetch_bitmap);
         /* Test if this page has been sent to dest in last checkpoint. 
-                * If so, we do not neet to COW this page in dest,
-                * because the last correct virsion of this  page has been
-                * stored well in the last checkpoint.
-                */
+         * If so, we do not neet to COW this page in dest,
+         * because the last correct virsion of this  page has been
+         * stored well in the last checkpoint.
+         */
         if (glo_smc_info.enable_incheckpoint_bitmap && 
             test_bit(next, smc_pml_incheckpoint_bitmap)) {
             *in_checkpoint = true;

@@ -536,8 +536,10 @@ void smc_pml_recover_backup_pages(SMCInfo *smc_info)
     int nb_pages = smc_info->pml_backup_pages.nb_eles;
     int i;
 
-    SMC_LOG(GEN, "pml_backup_pages=%d", nb_pages);
+    SMC_LOG(SIM, "pml_backup_pages=%d", nb_pages);
     for (i = 0; i < nb_pages; ++i) {
+        SMC_LOG(SIM, "page[%d]->host_addr=%" PRIu64 " offset=%" PRIu64 
+                " size=%" PRIu64, i, page->host_addr, page->offset, page->size);
         memcpy(page->host_addr, page->data, page->size);
         g_free(page->data);
         page->data = NULL;
@@ -583,7 +585,7 @@ void smc_pml_rollback_with_prefetch(SMCInfo *smc_info)
     case SMC_STATE_TRANSACTION_START:
     case SMC_STATE_PREFETCH_START:
     case SMC_STATE_PREFETCH_DONE:
-        SMC_LOG(PML, "rollback with state=%d", smc_info->state);
+        SMC_ERR("rollback with state=%d", smc_info->state);
         smc_pml_recover_backup_pages(smc_info);
         break;
 
@@ -592,7 +594,7 @@ void smc_pml_rollback_with_prefetch(SMCInfo *smc_info)
         break;
 
     case SMC_STATE_RECV_CHECKPOINT:
-        SMC_LOG(PML, "rollback with state=%s","SMC_STATE_RECV_CHECKPOINT");
+        SMC_ERR("rollback with state=%s","SMC_STATE_RECV_CHECKPOINT");
         break;
 
     default:

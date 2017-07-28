@@ -1123,8 +1123,8 @@ static void *mc_thread(void *opaque)
             smc_pml_prefetch_pages_reset(&glo_smc_info);
             smc_pml_prefetched_map_reset(&glo_smc_info);
             /* need to clear smc_pml_incheckpoint_bitmap before 
-                        * capturing this checkpoint.
-                        */
+             * capturing this checkpoint.
+             */
             glo_smc_info.enable_incheckpoint_bitmap = true;
         }
 #endif
@@ -1301,35 +1301,35 @@ static void *mc_thread(void *opaque)
          */
 
 #if defined(SMC_PML_PREFETCH)
-        prefetch_round = SMC_PML_PREFETCH_ROUND;
+        prefetch_round = 0;
         SMC_LOG(PML, "We have %" PRIu64 "ms remains as wait_time.", wait_time);
-        wait_time = (wait_time) / (prefetch_round + 1);
-        if (wait_time) {
-            SMC_LOG(PML, "let VM run %" PRIu64 "ms", wait_time);
-            s->nr_sleeps++;
-            g_usleep(wait_time * 1000);
-            s->total_wait_time += wait_time;
-        }
-        do {
-            glo_smc_info.need_clear_incheckpoint_bitmap = true;
-            smc_pml_capture_dirty_pages(&mc,s);
-            smc_pml_send_prefetch_info(f_opaque, &glo_smc_info);
-            smc_pml_prefetch_pages_next_subset(&glo_smc_info);
+        wait_time = (wait_time) / (SMC_PML_PREFETCH_ROUND + 1);
+
+        while (true) {
+            if (prefetch_round == SMC_PML_PREFETCH_ROUND - 1) {
+                glo_smc_info.need_clear_incheckpoint_bitmap = true;
+            }
             if (wait_time) {
-                SMC_LOG(PML, "let VM run %" PRIu64 "ms", wait_time);
+                SMC_LOG(PML, "===============================" 
+                        "let VM run %" PRIu64 "ms"
+                        "===============================", wait_time);
                 s->nr_sleeps++;
                 g_usleep(wait_time * 1000);
                 s->total_wait_time += wait_time;
             }
-            /*
-             * We should send slave a SMC_PML_RDMA_CONTROL_STOP_PREFETCH
-             * signal to info it to stop prefetching, therefore, if prefetch_round count
-             * down to 1, we send the SMC_PML_RDMA_CONTROL_STOP_PREFETCH 
-             * signal, otherwise we send SMC_PML_RDMA_CONTROL_NEXT_PREFETCH.
-             */
-            smc_pml_send_prefetch_signal(f_opaque, (prefetch_round == 1));
-            --prefetch_round;
-        } while (prefetch_round > 0);
+            if (prefetch_round == SMC_PML_PREFETCH_ROUND) {
+                smc_pml_send_prefetch_signal(f_opaque, true);
+                break;
+            }
+            smc_pml_capture_dirty_pages(&mc,s);
+            if (prefetch_round > 0) {
+                smc_pml_send_prefetch_signal(f_opaque, false);
+            }
+            smc_pml_send_prefetch_info(f_opaque, &glo_smc_info);
+            smc_pml_prefetch_pages_next_subset(&glo_smc_info);
+            ++prefetch_round;
+        }
+
         smc_pml_recv_round_prefetched_num(f_opaque, &glo_smc_info);
         smc_pml_persist_unprefetched_pages(&glo_smc_info);
         

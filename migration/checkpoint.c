@@ -105,7 +105,7 @@ static void flush_trace_buffer(void) {
 #define MC_SLAB_BUFFER_SIZE     (5UL * 1024UL * 1024UL) /* empirical */
 #define MC_DEV_NAME_MAX_SIZE    256
 
-#define MC_DEFAULT_CHECKPOINT_FREQ_MS 40 /* too slow, but best for now */
+#define MC_DEFAULT_CHECKPOINT_FREQ_MS 10 /* too slow, but best for now */
 #define CALC_MAX_STRIKES()                                           \
     do {  max_strikes = (max_strikes_delay_secs * 1000) / freq_ms; } \
     while (0)

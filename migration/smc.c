@@ -9,7 +9,7 @@
 #include "jhash.h"
 
 #define SMC_SET_INIT_CAP        40960
-#define SMC_SUPERSET_INIT_CAP   10
+#define SMC_SUPERSET_INIT_CAP   20
 
 SMCInfo glo_smc_info;
 
@@ -135,7 +135,7 @@ static void smc_superset_resize(SMCSuperSet *smc_superset, int new_cap)
 static void *smc_superset_get_idex(SMCSuperSet *smc_superset, 
                                         int idx)
 {
-    if (idx > smc_superset->nb_subsets || idx < 0) {
+    if (idx > smc_superset->cap || idx < 0) {
         return NULL;
     }
     return smc_superset->subsets + idx * sizeof(SMCSet);
@@ -198,15 +198,6 @@ static void smc_superset_insert_from_buf(SMCSuperSet *smc_superset,
     smc_set_insert_from_buf(subset, buf, nb_eles);
 }
 
-void free_prefetched_page_counter(gpointer value)
-{
-    SMCPMLPrefetchedPageCounter *page_counter = (SMCPMLPrefetchedPageCounter *)value;
-    SMC_LOG(PML, "Free ele in pml_prefetched_map page_offset=%" PRIu64
-            " counter=%" PRIu64, page_counter->prefetched_page->offset,
-            page_counter->counter);
-    g_free(page_counter);
-}
-
 void smc_init(SMCInfo *smc_info, void *opaque)
 {
     SMC_LOG(INIT, "");
@@ -221,9 +212,9 @@ void smc_init(SMCInfo *smc_info, void *opaque)
 #endif
 #ifdef SMC_PML_PREFETCH
     smc_superset_init(&smc_info->pml_prefetch_pages, sizeof(SMCPMLPrefetchPage));
+    smc_superset_init(&smc_info->pml_unsort_prefetch_pages, sizeof(SMCPMLPrefetchPage));
     smc_set_init(&smc_info->pml_backup_pages, sizeof(SMCPMLBackupPage));
-    smc_info->pml_prefetched_map = g_hash_table_new_full(g_direct_hash, g_direct_equal,
-                                                    NULL, free_prefetched_page_counter);
+    smc_info->pml_prefetched_map = g_hash_table_new(g_direct_hash, g_direct_equal);
 #endif
     smc_info->opaque = opaque;
     smc_info->init = true;
@@ -245,6 +236,7 @@ void smc_exit(SMCInfo *smc_info)
 #endif
 #ifdef SMC_PML_PREFETCH
     smc_superset_free(&smc_info->pml_prefetch_pages);
+    smc_superset_free(&smc_info->pml_unsort_prefetch_pages);
     smc_pml_backup_pages_reset(smc_info);
     smc_set_free(&smc_info->pml_backup_pages);
     g_hash_table_destroy(smc_info->pml_prefetched_map);
@@ -270,10 +262,11 @@ void smc_dirty_pages_insert(SMCInfo *smc_info, uint64_t block_offset,
     smc_set_insert(&smc_info->dirty_pages, &page);
 }
 
-SMCPMLPrefetchPage *smc_pml_prefetch_pages_insert(SMCInfo *smc_info,
+void smc_pml_unsort_prefetch_pages_insert(SMCInfo *smc_info,
                                             uint64_t block_offset,
                                             uint64_t offset, 
-                                            bool in_checkpoint, uint32_t size)
+                                            bool in_checkpoint, 
+                                            uint32_t size, int subset_idx)
 {
     SMCPMLPrefetchPage page = { .block_offset = block_offset,
                                 .offset = offset,
@@ -282,12 +275,37 @@ SMCPMLPrefetchPage *smc_pml_prefetch_pages_insert(SMCInfo *smc_info,
                               };
     
     SMC_ASSERT(smc_info->init);
-    SMC_LOG(GEN, "add SMCPMLPrefetchPage which block_offset=%" PRIu64 " offset=%"
-            PRIu64 " size=%" PRIu32 " in_checkpoint=%d", 
-            block_offset, offset, size, in_checkpoint);
+    SMC_LOG(GEN, "add into pml_unsort_prefetch_pages which block_offset=%" PRIu64 
+            " offset=%" PRIu64 " size=%" PRIu32 " in_checkpoint=%d subset_idx=%d", 
+            block_offset, offset, size, in_checkpoint, subset_idx);
+
+    if (subset_idx >= smc_info->pml_unsort_prefetch_pages.cap) {
+        smc_superset_resize(&smc_info->pml_unsort_prefetch_pages, 
+                            subset_idx + 1);
+    }
+    if (subset_idx > smc_info->pml_unsort_prefetch_pages.nb_subsets) {
+        smc_info->pml_unsort_prefetch_pages.nb_subsets = subset_idx;
+    }
     
-    return (SMCPMLPrefetchPage *)smc_superset_insert(&smc_info->pml_prefetch_pages,
-                        smc_info->pml_prefetch_pages.nb_subsets, &page);
+    smc_superset_insert(&smc_info->pml_unsort_prefetch_pages, subset_idx, &page);
+}
+
+void smc_pml_sort_prefetch_pages(SMCInfo *smc_info)
+{
+    int i;
+    SMCSuperSet *unsort_prefetch_pages = &smc_info->pml_unsort_prefetch_pages;
+    SMCSet * unsort_subset;
+
+    for (i = 0; i <= unsort_prefetch_pages->nb_subsets; i++) {
+        unsort_subset = (SMCSet *)(unsort_prefetch_pages->subsets + i * sizeof(SMCSet));
+        if (unsort_subset->nb_eles > 0) {
+            smc_superset_insert_from_buf(&smc_info->pml_prefetch_pages, 
+                                 smc_info->pml_prefetch_pages.nb_subsets, 
+                                 unsort_subset->eles, unsort_subset->nb_eles);
+            SMC_LOG(PML, "insert into pml_prefetch_pages[%d] %d sorted pages.", 
+                    smc_info->pml_prefetch_pages.nb_subsets, unsort_subset->nb_eles);
+        }
+    }
 }
 
 void smc_dirty_pages_reset(SMCInfo *smc_info)
@@ -303,6 +321,14 @@ void smc_pml_prefetch_pages_reset(SMCInfo *smc_info)
     smc_superset_reset(&smc_info->pml_prefetch_pages);
     SMC_LOG(GEN, "after reset pml_prefetch_pages subset=%d", 
                 smc_info->pml_prefetch_pages.nb_subsets);
+}
+
+void smc_pml_unsort_prefetch_pages_reset(SMCInfo *smc_info)
+{
+    SMC_ASSERT(smc_info->init);
+    smc_superset_reset(&smc_info->pml_unsort_prefetch_pages);
+    SMC_LOG(GEN, "after reset pml_unsort_prefetch_pages subset=%d", 
+                smc_info->pml_unsort_prefetch_pages.nb_subsets);
 }
 
 void smc_dirty_pages_insert_from_buf(SMCInfo *smc_info, const void *buf,

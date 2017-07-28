@@ -16,7 +16,7 @@
  * which can be found by using $ ibv_devinfo -v
  */
 #define SMC_NUM_DIRTY_PAGES_SEND        16351
-#define SMC_PML_PREFETCH_ROUND          10
+#define SMC_PML_PREFETCH_ROUND          2
 
 /* Info about a dirty page within a chunk */
 typedef struct SMCDirtyPage {
@@ -124,6 +124,8 @@ typedef struct SMCInfo {
     bool need_clear_incheckpoint_bitmap;
     /* store the number of prefetched pages in each round */
     uint32_t pml_round_prefetched_num[SMC_PML_PREFETCH_ROUND_LIMIT];
+    /* store the prefetched pages' info temporary when we sorting them */
+    SMCSuperSet pml_unsort_prefetch_pages;
 } SMCInfo;
 
 extern SMCInfo glo_smc_info;
@@ -132,12 +134,15 @@ void smc_init(SMCInfo *smc_info, void *opaque);
 void smc_exit(SMCInfo *smc_info);
 void smc_dirty_pages_insert(SMCInfo *smc_info, uint64_t block_offset,
                             uint64_t offset, uint32_t size, uint32_t flags);
-SMCPMLPrefetchPage *smc_pml_prefetch_pages_insert(SMCInfo *smc_info,
+void smc_pml_unsort_prefetch_pages_insert(SMCInfo *smc_info,
                                             uint64_t block_offset,
                                             uint64_t offset, 
-                                            bool in_checkpoint, uint32_t size);
+                                            bool in_checkpoint, 
+                                            uint32_t size, int subset_idx);
+void smc_pml_sort_prefetch_pages(SMCInfo *smc_info);
 void smc_pml_prefetch_pages_next_subset(SMCInfo *smc_info);
 void smc_pml_prefetch_pages_reset(SMCInfo *smc_info);
+void smc_pml_unsort_prefetch_pages_reset(SMCInfo *smc_info);
 void smc_pml_prefetch_pages_insert_from_buf(SMCInfo *smc_info, 
                                      const void *buf, int nb_pages);
 void smc_dirty_pages_reset(SMCInfo *smc_info);
@@ -200,7 +205,6 @@ int smc_pml_prefetch_pages_count(SMCInfo *smc_info, int superset_idx);
 int smc_pml_persist_unprefetched_pages(SMCInfo *smc_info);
 void smc_pml_set_bitmap_through_offset(uint64_t block_offset,
                                                     uint64_t offset);
-void free_prefetched_page_counter(gpointer value);
 
 static inline int smc_dirty_pages_count(SMCInfo *smc_info)
 {
@@ -249,25 +253,15 @@ static inline void smc_prefetch_map_insert(SMCInfo *smc_info, uint64_t phy_addr,
 }
 
 static inline void smc_pml_prefetched_map_insert(SMCInfo *smc_info, 
-                                           uint64_t phy_addr, SMCPMLPrefetchPage *page)
+                                           uint64_t phy_addr, uint32_t nb_page_prefetched)
 {
     gpointer key = (void *)(uintptr_t)phy_addr;
-    SMCPMLPrefetchedPageCounter *page_counter;
+    gpointer value = GUINT_TO_POINTER(nb_page_prefetched);
 
-    SMC_ASSERT(page);
-    page_counter = g_hash_table_lookup(smc_info->pml_prefetched_map, key);
-    if (page_counter == NULL) {
-        /* if we have not prefetched this same page yet*/
-        page_counter = g_malloc0(sizeof(SMCPMLPrefetchedPageCounter));
-        page_counter->prefetched_page = page;
-        page_counter->counter = 1;
-        g_hash_table_insert(smc_info->pml_prefetched_map, key, page_counter);
-    } else {
-        /* if we have already prefetched this same page */
-        page_counter->counter++;
-    }
-    SMC_LOG(PML, "insert to pml_prefetched_map page_offset=%" PRIu64 " counter=%" PRIu64,
-            page->offset, page_counter->counter);
+    g_hash_table_insert(smc_info->pml_prefetched_map, key, value);
+
+    //SMC_LOG(PML, "insert to pml_prefetched_map phy_addr(offset+block_offset)=%" PRIu64 
+    //        " counter=%d", phy_addr, nb_page_prefetched);
 }
 
 static inline SMCFetchPage *smc_prefetch_map_lookup(SMCInfo *smc_info,
@@ -277,11 +271,21 @@ static inline SMCFetchPage *smc_prefetch_map_lookup(SMCInfo *smc_info,
                                (void *)(uintptr_t)phy_addr);
 }
 
-static inline SMCPMLPrefetchedPageCounter *smc_pml_prefetched_map_lookup
+static inline uint32_t smc_pml_prefetched_map_lookup
                                             (SMCInfo *smc_info, uint64_t phy_addr)
 {
-    return g_hash_table_lookup(smc_info->pml_prefetched_map,
-                               (void *)(uintptr_t)phy_addr);
+    gpointer value;
+    uint32_t ret;
+    value = g_hash_table_lookup(smc_info->pml_prefetched_map, 
+                             (void *)(uintptr_t)phy_addr);
+    if (value) {
+        ret = GPOINTER_TO_UINT(value);
+        //SMC_LOG(PML, "phy_addr(offset+block_offset)=%" PRIu64 " counter=%d",
+        //        phy_addr, ret);
+        return ret;
+    } else {
+        return 0;
+    }
 }
 
 static inline void smc_set_state(SMCInfo *smc_info, int state)

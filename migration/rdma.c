@@ -4362,6 +4362,13 @@ int smc_pml_recv_round_prefetched_num(void *opaque, SMCInfo *smc_info)
     int i;
     uint32_t *data_recv;
 
+    /* At first we post a new RECV work request */
+    ret = qemu_rdma_post_recv_control(rdma, RDMA_WRID_READY);
+    if (ret < 0) {
+        SMC_ERR("qemu_rdma_post_recv_control() failed");
+        return ret;
+    }
+
     req_data = &rdma->wr_data[RDMA_WRID_READY];
     /* Block and wait for the round prefetched num info. */
     ret = qemu_rdma_exchange_get_response(rdma, &resp,
@@ -4373,13 +4380,6 @@ int smc_pml_recv_round_prefetched_num(void *opaque, SMCInfo *smc_info)
         return ret;
     }
     qemu_rdma_move_header(rdma, RDMA_WRID_READY, &resp);
-
-    /* Post a new RECV work request */
-    ret = qemu_rdma_post_recv_control(rdma, RDMA_WRID_READY);
-    if (ret < 0) {
-        SMC_ERR("qemu_rdma_post_recv_control() failed");
-        return ret;
-    }
 
     nb_round = resp.len / sizeof(uint32_t);
     data_recv = (uint32_t *)(req_data->control_curr);
@@ -4914,7 +4914,7 @@ static int smc_pml_do_prefetch_page(RDMAContext *rdma, SMCInfo *smc_info,
     uint8_t *host_addr;
     int ret = 0;
     bool in_checkpoint;
-    SMCPMLPrefetchedPageCounter *prefetched_page_counter;
+    uint32_t nb_page_fetched = 0;
 
     SMC_LOG(PML, "prefetch page block_offset=%" PRIu64 " offset=%" PRIu64
             " size=%" PRIu32 " in_checkpoint=%d", page->block_offset,
@@ -4929,9 +4929,9 @@ static int smc_pml_do_prefetch_page(RDMAContext *rdma, SMCInfo *smc_info,
         /* Test if the original version of this page has been COWed during
          * prior prefetching.
          */
-        prefetched_page_counter = smc_pml_prefetched_map_lookup(smc_info,
+        nb_page_fetched = smc_pml_prefetched_map_lookup(smc_info,
                                         page->block_offset + page->offset);
-        if (prefetched_page_counter == NULL) {
+        if (nb_page_fetched == 0) {
             /* We need to COW the original version of this page into
             * pml_backup_pages list.
             */
@@ -4940,7 +4940,9 @@ static int smc_pml_do_prefetch_page(RDMAContext *rdma, SMCInfo *smc_info,
         }
     }
 
-    smc_pml_prefetched_map_insert(smc_info, page->block_offset + page->offset,page);
+    nb_page_fetched++;
+    smc_pml_prefetched_map_insert(smc_info, page->block_offset + page->offset, 
+                                  nb_page_fetched);
     ret = smc_rdma_read(rdma, block, page->offset, page->size, page_idx);
     return ret;
 }

@@ -90,6 +90,11 @@ typedef struct SMCPMLPrefetchedPageCounter {
     uint64_t counter;
 } SMCPMLPrefetchedPageCounter;
 
+typedef struct SMCPMLRoundPrefetchInfo{
+    uint64_t nb_pages;
+    uint64_t prefetch_time;
+} SMCPMLRoundPrefetchInfo;
+
 #define SMC_STATE_RECV_CHECKPOINT       0
 #define SMC_STATE_PREFETCH_START        1
 #define SMC_STATE_PREFETCH_DONE         2
@@ -124,8 +129,8 @@ typedef struct SMCInfo {
     uint64_t nr_checkpoints;
     bool enable_incheckpoint_bitmap;
     //bool need_clear_incheckpoint_bitmap;
-    /* store the number of prefetched pages in each round */
-    uint32_t pml_round_prefetched_num[SMC_PML_PREFETCH_ROUND_LIMIT];
+    /* store the prefetched info of each round */
+    SMCPMLRoundPrefetchInfo  pml_round_prefetch_info[SMC_PML_PREFETCH_ROUND_LIMIT];
     /* store the prefetched pages' info temporary when we sorting them */
     SMCSuperSet pml_unsort_prefetch_pages;
     /* dirty page transmission speed (pages per millisecond) */
@@ -171,8 +176,7 @@ int smc_sync_notice_dest_to_recv(void *opaque, SMCInfo *smc_info);
 int smc_sync_src_ready_to_recv(void *opaque, SMCInfo *smc_info);
 int smc_prefetch_dirty_pages(void *opaque, SMCInfo *smc_info);
 int smc_pml_prefetch_dirty_pages(void *opaque, SMCInfo *smc_info);
-int smc_pml_recv_round_prefetched_num(void *opaque, SMCInfo *smc_info, 
-                                                     uint64_t xmit_time);
+int smc_pml_recv_round_prefetched_num(void *opaque, SMCInfo *smc_info);
 int smc_pml_send_round_prefetched_num(void *opaque, SMCInfo *smc_info);
 void smc_backup_pages_insert(SMCInfo *smc_info, uint64_t block_offset,
                              uint64_t offset, uint64_t size,

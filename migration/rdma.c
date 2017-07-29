@@ -4351,8 +4351,7 @@ int smc_recv_prefetch_info(void *opaque, SMCInfo *smc_info,
     return 0;
 }
 
-int smc_pml_recv_round_prefetched_num(void *opaque, 
-                                        SMCInfo *smc_info, uint64_t xmit_time)
+int smc_pml_recv_round_prefetched_num(void *opaque, SMCInfo *smc_info)
 {
     QEMUFileRDMA *rfile = opaque;
     RDMAContext *rdma = rfile->rdma;
@@ -4361,8 +4360,8 @@ int smc_pml_recv_round_prefetched_num(void *opaque,
     RDMAWorkRequestData *req_data;
     int nb_round;
     int i;
-    uint32_t *data_recv;
     uint64_t nb_total_xmit_pages = 0;
+    uint64_t total_prefetch_time = 0;
     double new_xmit_speed;
 
     /* At first we post a new RECV work request */
@@ -4384,14 +4383,19 @@ int smc_pml_recv_round_prefetched_num(void *opaque,
     }
     qemu_rdma_move_header(rdma, RDMA_WRID_READY, &resp);
 
-    nb_round = resp.len / sizeof(uint32_t);
-    data_recv = (uint32_t *)(req_data->control_curr);
-    for (i = 0; i < nb_round; i++) {
-        smc_info->pml_round_prefetched_num[i] = *data_recv;
-        nb_total_xmit_pages += smc_info->pml_round_prefetched_num[i];
-        ++data_recv;
-        SMC_LOG(PML, "pml_round_prefetched_num[%d]=%d", i,
-                smc_info->pml_round_prefetched_num[i]);
+    nb_total_xmit_pages = 0;
+    total_prefetch_time = 0;
+    nb_round = resp.len / sizeof(SMCPMLRoundPrefetchInfo);
+    SMC_ASSERT(nb_round == smc_info->pml_prefetch_pages.nb_subsets);
+    memcpy(smc_info->pml_round_prefetch_info, req_data->control_curr, resp.len);
+
+    for (i = 0 ; i < nb_round; i++) {
+        nb_total_xmit_pages += smc_info->pml_round_prefetch_info[i].nb_pages;
+        total_prefetch_time += smc_info->pml_round_prefetch_info[i].prefetch_time;
+        SMC_LOG(PML, "pml_round_prefetch_info[%d]: nb_pages=%" PRIu64
+                " prefetch_time=%" PRIu64, i,
+                smc_info->pml_round_prefetch_info[i].nb_pages,
+                smc_info->pml_round_prefetch_info[i].prefetch_time);
     }
 
     /* Clean the wr_data[] control message buffer */
@@ -4399,15 +4403,15 @@ int smc_pml_recv_round_prefetched_num(void *opaque,
     req_data->control_curr = req_data->control + sizeof(resp);
 
     /* calculate prefetching xmit speed here */
-    new_xmit_speed = (double)nb_total_xmit_pages / (double)xmit_time;
+    new_xmit_speed = (double)total_prefetch_time / (double)nb_total_xmit_pages;
     if (smc_info->pml_xmit_speed > 0) {
         smc_info->pml_xmit_speed = 
             (smc_info->pml_xmit_speed + new_xmit_speed) / 2;
     } else {
         smc_info->pml_xmit_speed = new_xmit_speed;
     }
-    SMC_LOG(PML, "nb_total_xmit_pages=%" PRIu64 " xmit_time=%" PRIu64
-            " new_pml_xmit_speed=%f", nb_total_xmit_pages, xmit_time,
+    SMC_LOG(PML, "nb_total_xmit_pages=%" PRIu64 " total_prefetch_time=%" PRIu64
+            " new_pml_xmit_speed=%f", nb_total_xmit_pages, total_prefetch_time,
             smc_info->pml_xmit_speed);
     
     return 0;
@@ -4491,10 +4495,10 @@ int smc_pml_send_round_prefetched_num(void *opaque, SMCInfo *smc_info)
     //RDMAWorkRequestData *req_data = &rdma->wr_data[RDMA_WRID_READY];
 
     SMC_LOG(PML, "send SMC_PML_RDMA_CONTROL_PREFETCHED_NUM of %d rounds", nb_round);
-    head.len = nb_round * sizeof(uint32_t);
+    head.len = nb_round * sizeof(SMCPMLRoundPrefetchInfo);
     SMC_ASSERT(head.len + sizeof(head) <= RDMA_CONTROL_MAX_BUFFER);
     ret = qemu_rdma_post_send_control(rdma, 
-                                    (uint8_t *)(&(smc_info->pml_round_prefetched_num)),
+                                    (uint8_t *)(&(smc_info->pml_round_prefetch_info)),
                                     &head);
     if (ret < 0) {
         SMC_ERR("qemu_rdma_post_send_control() failed to send the number of"
@@ -4837,7 +4841,7 @@ static int smc_pml_try_ack_rdma_read(RDMAContext *rdma, SMCInfo *smc_info,
     uint64_t wr_id_masked;
     uint64_t index;
 
-    SMC_LOG(PML, "is_blocked=%d", block);
+    //SMC_LOG(PML, "is_blocked=%d", block);
     if (block) {
         ret = smc_block_for_cq(rdma, lc, &wr_id);
         if (ret < 0) {
@@ -4852,12 +4856,12 @@ static int smc_pml_try_ack_rdma_read(RDMAContext *rdma, SMCInfo *smc_info,
 
         if (wr_id == RDMA_WRID_NONE) {
             *ack_idx = -1;
-            SMC_LOG(PML, "no WR finished");
+            //SMC_LOG(PML, "no WR finished");
             return 0;
         }
     }
 
-    SMC_LOG(PML, "got wr_id=%" PRIu64, wr_id);
+    //SMC_LOG(PML, "got wr_id=%" PRIu64, wr_id);
     wr_id_masked = wr_id & RDMA_WRID_TYPE_MASK;
     if (wr_id_masked == RDMA_WRID_RECV_CONTROL + RDMA_WRID_CONTROL) {
         /* Recv the next prefetch signal */
@@ -4873,7 +4877,7 @@ static int smc_pml_try_ack_rdma_read(RDMAContext *rdma, SMCInfo *smc_info,
     SMC_ASSERT(wr_id_masked == RDMA_WRID_RDMA_READ_REMOTE);
     index = (wr_id & RDMA_WRID_BLOCK_MASK) >> RDMA_WRID_BLOCK_SHIFT;
     *ack_idx = index;
-    SMC_LOG(PML, "prefetch page idx=%" PRIu64 " completed", index);
+    //SMC_LOG(PML, "prefetch page idx=%" PRIu64 " completed", index);
     return 0;
 }
 
@@ -4932,9 +4936,9 @@ static int smc_pml_do_prefetch_page(RDMAContext *rdma, SMCInfo *smc_info,
     bool in_checkpoint;
     uint32_t nb_page_fetched = 0;
 
-    SMC_LOG(PML, "prefetch page block_offset=%" PRIu64 " offset=%" PRIu64
-            " size=%" PRIu32 " in_checkpoint=%d", page->block_offset,
-            page->offset, page->size, page->in_checkpoint);
+    //SMC_LOG(PML, "prefetch page block_offset=%" PRIu64 " offset=%" PRIu64
+    //        " size=%" PRIu32 " in_checkpoint=%d", page->block_offset,
+    //        page->offset, page->size, page->in_checkpoint);
     block = g_hash_table_lookup(rdma->blockmap,
                                 (void *)(uintptr_t)page->block_offset);
     SMC_ASSERT(block);
@@ -5190,10 +5194,13 @@ int smc_pml_prefetch_dirty_pages(void *opaque, SMCInfo *smc_info)
     RDMAContext *rdma = rfile->rdma;
     int signal = 0;
     int ret = 0;
-    int pages;
+    int pages = 0;
+    int nb_subsets;
+    uint64_t start_time = 0, end_time = 0, prefetch_time = 0;
 
     SMC_LOG(PML, "start to prefetch dirty pages");
     smc_set_state(smc_info, SMC_STATE_PREFETCH_START);
+    start_time = qemu_clock_get_us(QEMU_CLOCK_REALTIME);
 
     ret = smc_pml_try_recv_prefetch_signal(rdma, smc_info);
     if (ret < 0) {
@@ -5204,6 +5211,7 @@ int smc_pml_prefetch_dirty_pages(void *opaque, SMCInfo *smc_info)
     }
     
     ret = smc_pml_do_prefetch_dirty_pages(rdma, smc_info, &pages);
+    end_time = qemu_clock_get_us(QEMU_CLOCK_REALTIME);
     if (ret < 0) {
         return ret;
     } else if (ret > 0){
@@ -5215,14 +5223,20 @@ int smc_pml_prefetch_dirty_pages(void *opaque, SMCInfo *smc_info)
             return ret;
         }
         signal = ret;
-    } 
-    SMC_LOG(PML, "fetch %d pages, recv signal %d", pages, signal);
-    smc_info->pml_round_prefetched_num[smc_info->pml_prefetch_pages.nb_subsets] = pages;
-    SMC_LOG(PML, "pml_round_prefetched_num[%d]=%d",
-            smc_info->pml_prefetch_pages.nb_subsets,
-            smc_info->pml_round_prefetched_num[smc_info->pml_prefetch_pages.nb_subsets]);
+    }
 
 handle_signal:
+    SMC_LOG(PML, "fetch %d pages, recv signal %d", pages, signal);
+    
+    prefetch_time = end_time - start_time;
+    nb_subsets = smc_info->pml_prefetch_pages.nb_subsets;
+    smc_info->pml_round_prefetch_info[nb_subsets].nb_pages = pages;
+    smc_info->pml_round_prefetch_info[nb_subsets].prefetch_time = prefetch_time;
+    SMC_LOG(PML, "pml_round_prefetch_info[%d]: nb_pages=%" PRIu64
+            " prefetch_time=%" PRIu64, nb_subsets, 
+            smc_info->pml_round_prefetch_info[nb_subsets].nb_pages,
+            smc_info->pml_round_prefetch_info[nb_subsets].prefetch_time);    
+    
     /* handle prefetch signal */
     if (signal == SMC_PML_RDMA_CONTROL_NEXT_PREFETCH) {
         /* Receive a signal to start next round prefetching, so

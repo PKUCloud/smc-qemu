@@ -723,7 +723,7 @@ int smc_pml_prefetch_pages_count(SMCInfo *smc_info, int superset_idx)
     return subset->nb_eles;
 }
 
-/* persist all the unprefetched pages accroding the pml_round_prefetched_num[] */
+/* persist all the unprefetched pages accroding the pml_round_prefetch_info[] */
 int smc_pml_persist_unprefetched_pages(SMCInfo *smc_info)
 {
     SMCSuperSet *superset = &(smc_info->pml_prefetch_pages);
@@ -735,12 +735,11 @@ int smc_pml_persist_unprefetched_pages(SMCInfo *smc_info)
 
     for (round_idx = 0; round_idx < nb_round; round_idx++) {
         subset = (SMCSet *)smc_superset_get_idex(superset, round_idx);
+        page_idx = smc_info->pml_round_prefetch_info[round_idx].nb_pages;
+        
         SMC_LOG(PML, "Round %d: should prefetch %d pages, but we prefetch %d"
                 " pages actually, remains %d pages", round_idx, subset->nb_eles,
-                smc_info->pml_round_prefetched_num[round_idx],
-                subset->nb_eles - smc_info->pml_round_prefetched_num[round_idx]);
-
-        page_idx = smc_info->pml_round_prefetched_num[round_idx];
+                page_idx, subset->nb_eles - page_idx);
 
         while (page_idx < subset->nb_eles) {
             unprefetched_page = smc_pml_prefetch_pages_get_idex(smc_info,

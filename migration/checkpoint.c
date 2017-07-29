@@ -1335,7 +1335,7 @@ static void *mc_thread(void *opaque)
             ++prefetch_round;
         }
 
-        smc_pml_recv_round_prefetched_num(f_opaque, &glo_smc_info, xmit_time);
+        smc_pml_recv_round_prefetched_num(f_opaque, &glo_smc_info);
         smc_pml_persist_unprefetched_pages(&glo_smc_info);
         
 #elif defined(SMC_PREFETCH)
@@ -1694,10 +1694,13 @@ void mc_process_incoming_checkpoints_if_requested(QEMUFile *f)
                 smc_set_state(&glo_smc_info, SMC_STATE_PREFETCH_DONE);
                 smc_pml_prefetch_pages_next_subset(&glo_smc_info);
             }
-            //for (ret = 0; ret <= glo_smc_info.pml_prefetch_pages.nb_subsets; ret++) {
-            //        SMC_LOG(PML, "pml_round_prefetched_num[%d]=%d", ret,
-            //                glo_smc_info.pml_round_prefetched_num[ret]);
-            //}
+            for (int i = 0; i <= glo_smc_info.pml_prefetch_pages.nb_subsets; i++) {
+                    SMC_LOG(PML, "pml_round_prefetch_info[%d]: nb_pages=%" PRIu64
+                            " prefetch_time=%" PRIu64, i, 
+                            glo_smc_info.pml_round_prefetch_info[i].nb_pages,
+                            glo_smc_info.pml_round_prefetch_info[i].prefetch_time);
+            }
+
             /* Send the number of the prefetched pages in each round to the src */
             ret = smc_pml_send_round_prefetched_num(f_opaque, &glo_smc_info);
             if (ret < 0) {

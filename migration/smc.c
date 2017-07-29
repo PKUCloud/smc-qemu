@@ -215,11 +215,12 @@ void smc_init(SMCInfo *smc_info, void *opaque)
     smc_superset_init(&smc_info->pml_unsort_prefetch_pages, sizeof(SMCPMLPrefetchPage));
     smc_set_init(&smc_info->pml_backup_pages, sizeof(SMCPMLBackupPage));
     smc_info->pml_prefetched_map = g_hash_table_new(g_direct_hash, g_direct_equal);
+    smc_info->pml_xmit_speed = -1;
 #endif
     smc_info->opaque = opaque;
     smc_info->init = true;
     smc_info->enable_incheckpoint_bitmap = false;
-    smc_info->need_clear_incheckpoint_bitmap = false;
+    //smc_info->need_clear_incheckpoint_bitmap = false;
 }
 
 void smc_exit(SMCInfo *smc_info)
@@ -243,7 +244,7 @@ void smc_exit(SMCInfo *smc_info)
 #endif
     smc_info->init = false;
     smc_info->enable_incheckpoint_bitmap = false;
-    smc_info->need_clear_incheckpoint_bitmap = false;
+    //smc_info->need_clear_incheckpoint_bitmap = false;
 }
 
 void smc_dirty_pages_insert(SMCInfo *smc_info, uint64_t block_offset,
@@ -538,8 +539,8 @@ void smc_pml_recover_backup_pages(SMCInfo *smc_info)
 
     SMC_LOG(SIM, "pml_backup_pages=%d", nb_pages);
     for (i = 0; i < nb_pages; ++i) {
-        SMC_LOG(SIM, "page[%d]->host_addr=%" PRIu64 " offset=%" PRIu64 
-                " size=%" PRIu64, i, page->host_addr, page->offset, page->size);
+        //SMC_LOG(SIM, "page[%d]->host_addr=%" PRIu64 " offset=%" PRIu64 
+        //        " size=%" PRIu64, i, page->host_addr, page->offset, page->size);
         memcpy(page->host_addr, page->data, page->size);
         g_free(page->data);
         page->data = NULL;
@@ -732,7 +733,6 @@ int smc_pml_persist_unprefetched_pages(SMCInfo *smc_info)
     int page_idx;
     SMCPMLPrefetchPage *unprefetched_page;
 
-    SMC_ASSERT(nb_round == SMC_PML_PREFETCH_ROUND);
     for (round_idx = 0; round_idx < nb_round; round_idx++) {
         subset = (SMCSet *)smc_superset_get_idex(superset, round_idx);
         SMC_LOG(PML, "Round %d: should prefetch %d pages, but we prefetch %d"
@@ -751,4 +751,24 @@ int smc_pml_persist_unprefetched_pages(SMCInfo *smc_info)
         }
     }
     return 0;
+}
+
+uint64_t smc_pml_calculate_xmit_sleep_time(SMCInfo *smc_info, 
+                                                       uint64_t remain_time)
+{
+    int nb_subsets = (smc_info->pml_prefetch_pages.nb_subsets - 1) < 0 ? 
+                     0 : smc_info->pml_prefetch_pages.nb_subsets - 1;
+    int nb_dirty_pages = smc_pml_prefetch_pages_count(smc_info, nb_subsets);
+    uint64_t sleep_time;
+    uint64_t min_prefetch_interval = (MC_DEFAULT_CHECKPOINT_FREQ_MS * 1000) / 
+                     (SMC_PML_PREFETCH_ROUND + 1);
+
+    sleep_time = nb_dirty_pages * smc_info->pml_xmit_speed;
+    if (sleep_time < min_prefetch_interval) {
+        sleep_time = min_prefetch_interval;
+    }
+    if (sleep_time > remain_time) {
+        sleep_time = remain_time;
+    }
+    return sleep_time;    
 }

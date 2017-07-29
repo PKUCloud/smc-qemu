@@ -1501,18 +1501,18 @@ static int ram_save_complete(QEMUFile *f, void *opaque)
 
 static int ram_prefetch_complete(QEMUFile *f, void *opaque)
 {
-    int64_t ram_bitmap_pages;
-
     smc_pml_prefetch_qemu_bitmap_sync();
+    return 0;
+}
 
-    if (glo_smc_info.enable_incheckpoint_bitmap && 
-        glo_smc_info.need_clear_incheckpoint_bitmap) {
+void ram_pml_clear_incheckpoint_bitmap(void)
+{
+    int64_t ram_bitmap_pages;
+    if (glo_smc_info.enable_incheckpoint_bitmap) {
         ram_bitmap_pages = last_ram_offset() >> TARGET_PAGE_BITS;
         bitmap_clear(smc_pml_incheckpoint_bitmap, 0, ram_bitmap_pages);
-        glo_smc_info.need_clear_incheckpoint_bitmap = false;
         SMC_LOG(PML, "clear smc_pml_incheckpoint_bitmap");
     }
-    return 0;
 }
 
 static uint64_t ram_save_pending(QEMUFile *f, void *opaque, uint64_t max_size)

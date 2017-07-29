@@ -16,7 +16,9 @@
  * which can be found by using $ ibv_devinfo -v
  */
 #define SMC_NUM_DIRTY_PAGES_SEND        16351
-#define SMC_PML_PREFETCH_ROUND          2
+#define SMC_PML_PREFETCH_ROUND          10
+/* default checkpoint frequency */
+#define MC_DEFAULT_CHECKPOINT_FREQ_MS   10
 
 /* Info about a dirty page within a chunk */
 typedef struct SMCDirtyPage {
@@ -121,11 +123,13 @@ typedef struct SMCInfo {
     SMCCache cache;
     uint64_t nr_checkpoints;
     bool enable_incheckpoint_bitmap;
-    bool need_clear_incheckpoint_bitmap;
+    //bool need_clear_incheckpoint_bitmap;
     /* store the number of prefetched pages in each round */
     uint32_t pml_round_prefetched_num[SMC_PML_PREFETCH_ROUND_LIMIT];
     /* store the prefetched pages' info temporary when we sorting them */
     SMCSuperSet pml_unsort_prefetch_pages;
+    /* dirty page transmission speed (pages per millisecond) */
+    double pml_xmit_speed;
 } SMCInfo;
 
 extern SMCInfo glo_smc_info;
@@ -167,7 +171,8 @@ int smc_sync_notice_dest_to_recv(void *opaque, SMCInfo *smc_info);
 int smc_sync_src_ready_to_recv(void *opaque, SMCInfo *smc_info);
 int smc_prefetch_dirty_pages(void *opaque, SMCInfo *smc_info);
 int smc_pml_prefetch_dirty_pages(void *opaque, SMCInfo *smc_info);
-int smc_pml_recv_round_prefetched_num(void *opaque, SMCInfo *smc_info);
+int smc_pml_recv_round_prefetched_num(void *opaque, SMCInfo *smc_info, 
+                                                     uint64_t xmit_time);
 int smc_pml_send_round_prefetched_num(void *opaque, SMCInfo *smc_info);
 void smc_backup_pages_insert(SMCInfo *smc_info, uint64_t block_offset,
                              uint64_t offset, uint64_t size,
@@ -205,6 +210,9 @@ int smc_pml_prefetch_pages_count(SMCInfo *smc_info, int superset_idx);
 int smc_pml_persist_unprefetched_pages(SMCInfo *smc_info);
 void smc_pml_set_bitmap_through_offset(uint64_t block_offset,
                                                     uint64_t offset);
+uint64_t smc_pml_calculate_xmit_sleep_time(SMCInfo *smc_info, 
+                                                       uint64_t remain_time);
+void ram_pml_clear_incheckpoint_bitmap(void);
 
 static inline int smc_dirty_pages_count(SMCInfo *smc_info)
 {

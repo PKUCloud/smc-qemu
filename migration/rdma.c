@@ -4351,7 +4351,8 @@ int smc_recv_prefetch_info(void *opaque, SMCInfo *smc_info,
     return 0;
 }
 
-int smc_pml_recv_round_prefetched_num(void *opaque, SMCInfo *smc_info)
+int smc_pml_recv_round_prefetched_num(void *opaque, 
+                                        SMCInfo *smc_info, uint64_t xmit_time)
 {
     QEMUFileRDMA *rfile = opaque;
     RDMAContext *rdma = rfile->rdma;
@@ -4361,6 +4362,8 @@ int smc_pml_recv_round_prefetched_num(void *opaque, SMCInfo *smc_info)
     int nb_round;
     int i;
     uint32_t *data_recv;
+    uint64_t nb_total_xmit_pages = 0;
+    double new_xmit_speed;
 
     /* At first we post a new RECV work request */
     ret = qemu_rdma_post_recv_control(rdma, RDMA_WRID_READY);
@@ -4385,6 +4388,7 @@ int smc_pml_recv_round_prefetched_num(void *opaque, SMCInfo *smc_info)
     data_recv = (uint32_t *)(req_data->control_curr);
     for (i = 0; i < nb_round; i++) {
         smc_info->pml_round_prefetched_num[i] = *data_recv;
+        nb_total_xmit_pages += smc_info->pml_round_prefetched_num[i];
         ++data_recv;
         SMC_LOG(PML, "pml_round_prefetched_num[%d]=%d", i,
                 smc_info->pml_round_prefetched_num[i]);
@@ -4394,6 +4398,18 @@ int smc_pml_recv_round_prefetched_num(void *opaque, SMCInfo *smc_info)
     req_data->control_len = 0;
     req_data->control_curr = req_data->control + sizeof(resp);
 
+    /* calculate prefetching xmit speed here */
+    new_xmit_speed = (double)nb_total_xmit_pages / (double)xmit_time;
+    if (smc_info->pml_xmit_speed > 0) {
+        smc_info->pml_xmit_speed = 
+            (smc_info->pml_xmit_speed + new_xmit_speed) / 2;
+    } else {
+        smc_info->pml_xmit_speed = new_xmit_speed;
+    }
+    SMC_LOG(PML, "nb_total_xmit_pages=%" PRIu64 " xmit_time=%" PRIu64
+            " new_pml_xmit_speed=%f", nb_total_xmit_pages, xmit_time,
+            smc_info->pml_xmit_speed);
+    
     return 0;
 }
 

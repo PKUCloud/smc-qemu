@@ -105,7 +105,6 @@ static void flush_trace_buffer(void) {
 #define MC_SLAB_BUFFER_SIZE     (5UL * 1024UL * 1024UL) /* empirical */
 #define MC_DEV_NAME_MAX_SIZE    256
 
-#define MC_DEFAULT_CHECKPOINT_FREQ_MS 10 /* too slow, but best for now */
 #define CALC_MAX_STRIKES()                                           \
     do {  max_strikes = (max_strikes_delay_secs * 1000) / freq_ms; } \
     while (0)
@@ -1044,6 +1043,7 @@ static void *mc_thread(void *opaque)
     int ret = 0, fd = qemu_get_fd(s->file), x;
     QEMUFile *mc_control, *mc_staging = NULL;
     uint64_t wait_time = 0;
+    uint64_t remain_time = 0;
     Error *local_err = NULL;
     bool blk_enabled = false;
     int64_t fetch_time;
@@ -1110,7 +1110,7 @@ static void *mc_thread(void *opaque)
     }
 
     while (s->state == MIGRATION_STATUS_CHECKPOINTING) {
-        int64_t start_time, xmit_start, end_time;
+        int64_t start_time, xmit_start, end_time, xmit_time;
         bool commit_sent = false;
         int fetch_speed;
 #ifdef SMC_PREFETCH
@@ -1280,10 +1280,10 @@ static void *mc_thread(void *opaque)
         s->bytes_xfer = mc.slab_total;
         s->checkpoints = ++(mc.checkpoints);
 
-        wait_time = (s->xmit_time <= freq_ms) ? (freq_ms - s->xmit_time) : 0;
+        remain_time = (s->xmit_time <= freq_ms) ? (freq_ms - s->xmit_time) : 0;
 #ifdef SMC_PREFETCH
-        if (wait_time >= SMC_PREFETCH_RECV_TIME) {
-            wait_time -= SMC_PREFETCH_RECV_TIME;
+        if (remain_time >= SMC_PREFETCH_RECV_TIME) {
+            remain_time -= SMC_PREFETCH_RECV_TIME;
         }
 #endif
 
@@ -1302,43 +1302,48 @@ static void *mc_thread(void *opaque)
 
 #if defined(SMC_PML_PREFETCH)
         prefetch_round = 0;
-        SMC_LOG(PML, "We have %" PRIu64 "ms remains as wait_time.", wait_time);
-        wait_time = (wait_time) / (SMC_PML_PREFETCH_ROUND + 1);
+        xmit_time = 0;
+        //TODO: remain_time = freq_ms - s->xmit_time, but we may get 0 remain time!
+        remain_time = freq_ms * 1000;
+        SMC_LOG(PML, "--------------------------------"
+                "We have %" PRIu64 " microseconds remains."
+                "--------------------------------", remain_time);
 
         while (true) {
-            if (prefetch_round == SMC_PML_PREFETCH_ROUND - 1) {
-                glo_smc_info.need_clear_incheckpoint_bitmap = true;
-            }
-            if (wait_time) {
-                SMC_LOG(PML, "===============================" 
-                        "let VM run %" PRIu64 "ms"
-                        "===============================", wait_time);
-                s->nr_sleeps++;
-                g_usleep(wait_time * 1000);
-                s->total_wait_time += wait_time;
-            }
-            if (prefetch_round == SMC_PML_PREFETCH_ROUND) {
+            wait_time = smc_pml_calculate_xmit_sleep_time(&glo_smc_info, remain_time);
+            remain_time -= wait_time;
+            SMC_LOG(PML, "===============================" 
+                    "let VM run %" PRIu64 " microseconds"
+                    "===============================", wait_time);
+            g_usleep(wait_time);
+            xmit_time += wait_time;
+            if (remain_time <= 0) {
+                /* Prefetching done */
                 smc_pml_send_prefetch_signal(f_opaque, true);
+                ram_pml_clear_incheckpoint_bitmap();
                 break;
             }
             smc_pml_capture_dirty_pages(&mc,s);
             if (prefetch_round > 0) {
                 smc_pml_send_prefetch_signal(f_opaque, false);
+            } else {
+                /* First prefetching start here */
+                xmit_time = 0;
             }
             smc_pml_send_prefetch_info(f_opaque, &glo_smc_info);
             smc_pml_prefetch_pages_next_subset(&glo_smc_info);
             ++prefetch_round;
         }
 
-        smc_pml_recv_round_prefetched_num(f_opaque, &glo_smc_info);
+        smc_pml_recv_round_prefetched_num(f_opaque, &glo_smc_info, xmit_time);
         smc_pml_persist_unprefetched_pages(&glo_smc_info);
         
 #elif defined(SMC_PREFETCH)
-        if (wait_time) {
-           SMC_LOG(GEN, "let VM run %" PRIu64 "ms", wait_time);
+        if (remain_time) {
+           SMC_LOG(GEN, "let VM run %" PRIu64 "ms", remain_time);
            s->nr_sleeps++;
-           g_usleep(wait_time * 1000);
-           s->total_wait_time += wait_time;
+           g_usleep(remain_time * 1000);
+           s->total_wait_time += remain_time;
         }
         /* TODO: Maybe we should decrease the @wait_time to sleep to get time
          * for receiving the prefetched info.
@@ -1351,11 +1356,11 @@ static void *mc_thread(void *opaque)
             goto err;
         }
 #else
-        if (wait_time) {
-            SMC_LOG(GEN, "let VM run %" PRIu64 "ms", wait_time);
+        if (remain_time) {
+            SMC_LOG(GEN, "let VM run %" PRIu64 "ms", remain_time);
             s->nr_sleeps++;
-            g_usleep(wait_time * 1000);
-            s->total_wait_time += wait_time;
+            g_usleep(remain_time * 1000);
+            s->total_wait_time += remain_time;
         }
 #endif
 

@@ -303,8 +303,8 @@ void smc_pml_sort_prefetch_pages(SMCInfo *smc_info)
             smc_superset_insert_from_buf(&smc_info->pml_prefetch_pages, 
                                  smc_info->pml_prefetch_pages.nb_subsets, 
                                  unsort_subset->eles, unsort_subset->nb_eles);
-            SMC_LOG(PML, "insert into pml_prefetch_pages[%d] %d sorted pages.", 
-                    smc_info->pml_prefetch_pages.nb_subsets, unsort_subset->nb_eles);
+            //SMC_LOG(PML, "insert into pml_prefetch_pages[%d] %d sorted pages.", 
+            //        smc_info->pml_prefetch_pages.nb_subsets, unsort_subset->nb_eles);
         }
     }
 }
@@ -764,10 +764,16 @@ uint64_t smc_pml_calculate_xmit_sleep_time(SMCInfo *smc_info,
 
     sleep_time = nb_dirty_pages * smc_info->pml_xmit_speed;
     if (sleep_time < min_prefetch_interval) {
+        /* at most prefetch @SMC_PML_PREFETCH_ROUND round */
         sleep_time = min_prefetch_interval;
     }
-    if (sleep_time > remain_time) {
+    if (sleep_time > remain_time - 100) {
+        /* don't have enough time to prefetch all pages */
         sleep_time = remain_time;
     }
-    return sleep_time;    
+
+    SMC_LOG(PML, "sleep_time=%" PRIu64 " remain_time=%" PRIu64,
+            sleep_time, remain_time);
+    
+    return sleep_time;
 }

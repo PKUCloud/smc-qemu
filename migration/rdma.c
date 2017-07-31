@@ -5201,7 +5201,7 @@ int smc_pml_prefetch_dirty_pages(void *opaque, SMCInfo *smc_info)
     int nb_subsets;
     uint64_t start_time = 0, end_time = 0, prefetch_time = 0;
 
-    SMC_LOG(PML, "start to prefetch dirty pages");
+    //SMC_LOG(PML, "start to prefetch dirty pages");
     smc_set_state(smc_info, SMC_STATE_PREFETCH_START);
     start_time = qemu_clock_get_us(QEMU_CLOCK_REALTIME);
 
@@ -5247,8 +5247,8 @@ handle_signal:
         /* Receive a signal to start next round prefetching, so
                 * terminate this prefetching immediately.
                 */
-        SMC_LOG(PML, "Receive a signal to start NEXT round prefetching,"
-                "so terminate this prefetching immediately.");
+        //SMC_LOG(PML, "Receive a signal to start NEXT round prefetching,"
+        //        "so terminate this prefetching immediately.");
         /* something should be done here to make sure we can start next round prefeching */
         smc_set_state(smc_info, SMC_STATE_PREFETCH_DONE);
         return 1;
@@ -5256,8 +5256,8 @@ handle_signal:
         /* Receive a signal to stop prefetching, so
                 * terminate this prefetching immediately.
                 */
-        SMC_LOG(PML, "Receive a signal to STOP prefetching,"
-                "so terminate this prefetching immediately.");
+        //SMC_LOG(PML, "Receive a signal to STOP prefetching,"
+        //        "so terminate this prefetching immediately.");
         smc_set_state(smc_info, SMC_STATE_PREFETCH_DONE);
         return 0;
     } else {

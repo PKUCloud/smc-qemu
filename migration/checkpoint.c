@@ -797,14 +797,15 @@ out:
  */
 static void smc_pml_capture_dirty_pages(MCParams *mc, MigrationState *s)
 {
-    SMC_LOG(PML, "stop the VM and then capture dirty pages");
-    //Do NOT need to stop VM, because we do not need accurate dirty information
-    //qemu_mutex_lock_iothread();
-    //vm_stop_force_state(RUN_STATE_CHECKPOINTING);
+    /* Do NOT need to stop VM, because we do not need accurate dirty information
+     * qemu_mutex_lock_iothread();
+     * vm_stop_force_state(RUN_STATE_CHECKPOINTING);
+     */
     qemu_prefetch_state_begin(mc->staging);
-    //vm_start();
-    //qemu_mutex_unlock_iothread();
-    //let VM go as soon as possible
+    /* Do NOT need to stop VM 
+     * vm_start();
+     * qemu_mutex_unlock_iothread();
+     */
     qemu_prefetch_state_complete(mc->staging);
 }
 
@@ -1110,7 +1111,7 @@ static void *mc_thread(void *opaque)
     }
 
     while (s->state == MIGRATION_STATUS_CHECKPOINTING) {
-        int64_t start_time, xmit_start, end_time, xmit_time;
+        int64_t start_time, xmit_start, end_time;
         bool commit_sent = false;
         int fetch_speed;
 #ifdef SMC_PREFETCH
@@ -1302,7 +1303,6 @@ static void *mc_thread(void *opaque)
 
 #if defined(SMC_PML_PREFETCH)
         prefetch_round = 0;
-        xmit_time = 0;
         //TODO: remain_time = freq_ms - s->xmit_time, but we may get 0 remain time!
         remain_time = freq_ms * 1000;
         SMC_LOG(PML, "--------------------------------"
@@ -1316,7 +1316,6 @@ static void *mc_thread(void *opaque)
                     "let VM run %" PRIu64 " microseconds"
                     "===============================", wait_time);
             g_usleep(wait_time);
-            xmit_time += wait_time;
             if (remain_time <= 0) {
                 /* Prefetching done */
                 smc_pml_send_prefetch_signal(f_opaque, true);
@@ -1326,10 +1325,7 @@ static void *mc_thread(void *opaque)
             smc_pml_capture_dirty_pages(&mc,s);
             if (prefetch_round > 0) {
                 smc_pml_send_prefetch_signal(f_opaque, false);
-            } else {
-                /* First prefetching start here */
-                xmit_time = 0;
-            }
+            } 
             smc_pml_send_prefetch_info(f_opaque, &glo_smc_info);
             smc_pml_prefetch_pages_next_subset(&glo_smc_info);
             ++prefetch_round;

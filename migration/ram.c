@@ -1154,7 +1154,7 @@ void smc_pml_set_bitmap_through_offset(uint64_t block_offset,
 /* Called with iothread lock held, to protect ram_list.dirty_memory[] */
 static void smc_pml_prefetch_kvm_bitmap_sync(void)
 {
-    SMC_LOG(PML, "capture dirty pages from KVM by ioctl");
+    //SMC_LOG(PML, "capture dirty pages from KVM by ioctl");
     address_space_sync_dirty_bitmap(&address_space_memory);
 }
 
@@ -1163,7 +1163,7 @@ static void smc_pml_prefetch_qemu_bitmap_sync(void)
     RAMBlock *block;
     smc_pml_prefetch_pages = 0;
 
-    SMC_LOG(PML, "Synchronize the dirty bitmap into Qemu");
+    //SMC_LOG(PML, "Synchronize the dirty bitmap into Qemu");
     rcu_read_lock();
     QLIST_FOREACH_RCU(block, &ram_list.blocks, next) {
         smc_pml_prefetch_bitmap_sync_range(block->mr->ram_addr, block->used_length);
@@ -1172,8 +1172,8 @@ static void smc_pml_prefetch_qemu_bitmap_sync(void)
     SMC_LOG(PML, "Get %" PRIu64 " dirty pages in total", smc_pml_prefetch_pages);
 
     smc_pml_ram_find_and_prefetch_block();
-    SMC_LOG(PML, "After synchronization the smc_pml_prefetch_pages should be 0,"
-            "and the actual value is %" PRIu64, smc_pml_prefetch_pages);
+    //SMC_LOG(PML, "After synchronization the smc_pml_prefetch_pages should be 0,"
+    //        "and the actual value is %" PRIu64, smc_pml_prefetch_pages);
 }
 
 void acct_update_position(QEMUFile *f, size_t size, bool zero)

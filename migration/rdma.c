@@ -4403,13 +4403,16 @@ int smc_pml_recv_round_prefetched_num(void *opaque, SMCInfo *smc_info)
     req_data->control_curr = req_data->control + sizeof(resp);
 
     /* calculate prefetching xmit speed here */
-    new_xmit_speed = (double)total_prefetch_time / (double)nb_total_xmit_pages;
-    if (smc_info->pml_xmit_speed > 0) {
-        smc_info->pml_xmit_speed = 
-            (smc_info->pml_xmit_speed + new_xmit_speed) / 2;
-    } else {
-        smc_info->pml_xmit_speed = new_xmit_speed;
+    if (nb_total_xmit_pages != 0) {
+        new_xmit_speed = (double)total_prefetch_time / (double)nb_total_xmit_pages;
+        if (smc_info->pml_xmit_speed > 0) {
+            smc_info->pml_xmit_speed = 
+                (smc_info->pml_xmit_speed + new_xmit_speed) / 2;
+        } else {
+            smc_info->pml_xmit_speed = new_xmit_speed;
+        }
     }
+
     SMC_LOG(PML, "nb_total_xmit_pages=%" PRIu64 " total_prefetch_time=%" PRIu64
             " new_pml_xmit_speed=%f", nb_total_xmit_pages, total_prefetch_time,
             smc_info->pml_xmit_speed);
@@ -5207,6 +5210,8 @@ int smc_pml_prefetch_dirty_pages(void *opaque, SMCInfo *smc_info)
         return ret;
     } else if (ret > 0) {
         signal = ret;
+        /* have no time to prefetch */
+        end_time = start_time;
         goto handle_signal;
     }
     

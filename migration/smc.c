@@ -215,7 +215,7 @@ void smc_init(SMCInfo *smc_info, void *opaque)
     smc_superset_init(&smc_info->pml_unsort_prefetch_pages, sizeof(SMCPMLPrefetchPage));
     smc_set_init(&smc_info->pml_backup_pages, sizeof(SMCPMLBackupPage));
     smc_info->pml_prefetched_map = g_hash_table_new(g_direct_hash, g_direct_equal);
-    smc_info->pml_xmit_speed = -1;
+    smc_info->pml_xmit_speed = 0;
 #endif
     smc_info->opaque = opaque;
     smc_info->init = true;
@@ -767,7 +767,7 @@ uint64_t smc_pml_calculate_xmit_sleep_time(SMCInfo *smc_info,
         /* at most prefetch @SMC_PML_PREFETCH_ROUND round */
         sleep_time = min_prefetch_interval;
     }
-    if (sleep_time > remain_time - 100) {
+    if (sleep_time + 100 > remain_time) {
         /* don't have enough time to prefetch all pages */
         sleep_time = remain_time;
     }

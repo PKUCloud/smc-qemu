@@ -1226,6 +1226,13 @@ static void *mc_thread(void *opaque)
             goto err;
         }
 
+        /*
+         * The MC is safe on the other side now,
+         * go along our merry way and release the network
+         * packets from the buffer if enabled.
+         */
+        mc_flush_oldest_buffer();
+
         DDPRINTF("Memory transfer complete.\n");
 
 #ifdef SMC_PREFETCH
@@ -1236,14 +1243,6 @@ static void *mc_thread(void *opaque)
             goto err;
         }
 #endif
-
-        /*
-         * The MC is safe on the other side now,
-         * go along our merry way and release the network
-         * packets from the buffer if enabled.
-         */
-        mc_flush_oldest_buffer();
-
         end_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
 
 #ifdef SMC_PREFETCH
@@ -1304,7 +1303,7 @@ static void *mc_thread(void *opaque)
 #if defined(SMC_PML_PREFETCH)
         prefetch_round = 0;
         //TODO: remain_time = freq_ms - s->xmit_time, but we may get 0 remain time!
-        remain_time = freq_ms * 1000;
+        remain_time = remain_time * 1000;
         SMC_LOG(PML, "--------------------------------"
                 "We have %" PRIu64 " microseconds remains."
                 "--------------------------------", remain_time);
@@ -1314,9 +1313,13 @@ static void *mc_thread(void *opaque)
             remain_time -= wait_time;
             SMC_LOG(PML, "===============================" 
                     "let VM run %" PRIu64 " microseconds"
-                    "===============================", wait_time);
-            g_usleep(wait_time);
-            if (remain_time <= 0) {
+                    "==============================="
+                    "remain_time = %" PRIu64,
+                    wait_time , remain_time);
+            if (wait_time) {
+                g_usleep(wait_time);
+            }
+            if (remain_time <= 0 && prefetch_round) {
                 /* Prefetching done */
                 smc_pml_send_prefetch_signal(f_opaque, true);
                 ram_pml_clear_incheckpoint_bitmap();

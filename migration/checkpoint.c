@@ -1120,6 +1120,7 @@ static void *mc_thread(void *opaque)
         smc_dirty_pages_reset(&glo_smc_info);
 #endif
 #ifdef SMC_PML_PREFETCH
+        glo_smc_info.early_flush_buffer = false;
         if (smc_is_init(&glo_smc_info)) {
             smc_pml_prefetch_pages_reset(&glo_smc_info);
             smc_pml_prefetched_map_reset(&glo_smc_info);
@@ -1137,6 +1138,13 @@ static void *mc_thread(void *opaque)
         if (capture_checkpoint(&mc, s) < 0) {
             break;
         }
+
+#ifdef SMC_PML_PREFETCH
+        if (glo_smc_info.early_flush_buffer) {
+            mc_flush_oldest_buffer();
+        }
+#endif
+
 
         assert(mc.slab_total);
 
@@ -1231,7 +1239,9 @@ static void *mc_thread(void *opaque)
          * go along our merry way and release the network
          * packets from the buffer if enabled.
          */
-        mc_flush_oldest_buffer();
+        if (!glo_smc_info.early_flush_buffer) { 
+            mc_flush_oldest_buffer();
+        }
 
         DDPRINTF("Memory transfer complete.\n");
 

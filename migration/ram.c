@@ -1466,6 +1466,13 @@ static int ram_save_complete(QEMUFile *f, void *opaque)
 
     SMC_LOG(SIM, "migration_dirty_pages = %" PRIu64 "", migration_dirty_pages);
 
+    if (migration_dirty_pages == 0) {
+        /* get zero page in this checkpoint, 
+         * we can flush the buffer immediately
+         */
+        glo_smc_info.early_flush_buffer = true;
+    }
+
     ram_control_before_iterate(f, RAM_CONTROL_FINISH);
 
     /* try transferring iterative blocks of memory */

@@ -6,6 +6,10 @@
 #include "smc-debug.h"
 #include "smc-cache.h"
 
+//for unsignaled completions
+#define NEED_SEND_SIGNAL 1
+#define NO_NEED_SEND_SIGNAL 0
+
 //#define SMC_PREFETCH
 #define SMC_PML_PREFETCH
 

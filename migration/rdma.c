@@ -576,6 +576,7 @@ static int qemu_rdma_alloc_pd_cq_qp(RDMAContext *rdma, RDMALocalContext *lc)
     attr.cap.max_recv_wr = 3;
     attr.cap.max_send_sge = 1;
     attr.cap.max_recv_sge = 1;
+    attr.sq_sig_all = 0;
     attr.send_cq = lc->cq;
     attr.recv_cq = lc->cq;
     attr.qp_type = IBV_QPT_RC;
@@ -4675,7 +4676,7 @@ static int smc_pml_block_recv_prefetch_signal(RDMAContext *rdma, SMCInfo *smc_in
 }
 
 static int smc_rdma_read(RDMAContext *rdma, RDMALocalBlock *block,
-                         uint64_t offset, uint64_t size, uint32_t page_idx)
+                         uint64_t offset, uint64_t size, uint32_t page_idx, int need_send_signal)
 {
     struct ibv_sge sge;
     struct ibv_send_wr send_wr = { 0 };
@@ -4693,7 +4694,17 @@ static int smc_rdma_read(RDMAContext *rdma, RDMALocalBlock *block,
     sge.length = size;
     sge.addr = (uintptr_t)(block->local_host_addr + offset);
     send_wr.opcode = IBV_WR_RDMA_READ;
-    send_wr.send_flags = IBV_SEND_SIGNALED;
+
+    //unsignaled completions
+    if(need_send_signal == NEED_SEND_SIGNAL)
+    {
+        send_wr.send_flags = IBV_SEND_SIGNALED;
+    }
+    else if(need_send_signal == NO_NEED_SEND_SIGNAL)
+    {
+        send_wr.send_flags = 0;
+    }
+    
     send_wr.sg_list = &sge;
     send_wr.num_sge = 1;
     send_wr.wr.rdma.remote_addr = block->remote_host_addr + offset;
@@ -4925,7 +4936,7 @@ static int smc_do_prefetch_page(RDMAContext *rdma, SMCInfo *smc_info,
                                 page->size, host_addr);
     }
 
-    ret = smc_rdma_read(rdma, block, page->offset, page->size, page->idx);
+    ret = smc_rdma_read(rdma, block, page->offset, page->size, page->idx, NEED_SEND_SIGNAL);
 
     return ret;
 }
@@ -4966,7 +4977,7 @@ static int smc_pml_do_prefetch_page(RDMAContext *rdma, SMCInfo *smc_info,
     nb_page_fetched++;
     smc_pml_prefetched_map_insert(smc_info, page->block_offset + page->offset, 
                                   nb_page_fetched);
-    ret = smc_rdma_read(rdma, block, page->offset, page->size, page_idx);
+    ret = smc_rdma_read(rdma, block, page->offset, page->size, page_idx, NO_NEED_SEND_SIGNAL);
     return ret;
 }
 
@@ -5106,20 +5117,6 @@ static int smc_pml_do_prefetch_dirty_pages(RDMAContext *rdma, SMCInfo *smc_info,
 
         if (signal) {
             break;
-        }
-    }
-
-    while (nb_ack < nb_post) {
-        /* Block until any WR is finished */
-        ret = smc_pml_try_ack_rdma_read(rdma, smc_info, true, &ack_idx);
-        if (ret < 0) {
-            return ret;
-        } else if (ret > 0) {
-            SMC_ASSERT(signal == 0);
-            signal = ret;
-        } else {
-            SMC_ASSERT(ack_idx != -1);
-            ++nb_ack;
         }
     }
 

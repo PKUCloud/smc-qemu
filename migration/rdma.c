@@ -4676,7 +4676,8 @@ static int smc_pml_block_recv_prefetch_signal(RDMAContext *rdma, SMCInfo *smc_in
 }
 
 static int smc_rdma_read(RDMAContext *rdma, RDMALocalBlock *block,
-                         uint64_t offset, uint64_t size, uint32_t page_idx, int need_send_signal)
+                         uint64_t offset, uint64_t size, uint32_t page_idx, int need_send_signal,
+                         uint64_t *wr_id_out)
 {
     struct ibv_sge sge;
     struct ibv_send_wr send_wr = { 0 };
@@ -4691,6 +4692,9 @@ static int smc_rdma_read(RDMAContext *rdma, RDMALocalBlock *block,
     sge.lkey = block->mr->lkey;
     send_wr.wr_id = qemu_rdma_make_wrid(RDMA_WRID_RDMA_READ_REMOTE,
                                         page_idx, 0);
+
+    *wr_id_out = send_wr.wr_id;
+
     sge.length = size;
     sge.addr = (uintptr_t)(block->local_host_addr + offset);
     send_wr.opcode = IBV_WR_RDMA_READ;
@@ -4914,6 +4918,7 @@ static int smc_do_prefetch_page(RDMAContext *rdma, SMCInfo *smc_info,
     RDMALocalBlock *block;
     uint8_t *host_addr;
     int ret = 0;
+    uint64_t *send_wr_id;
 
     SMC_LOG(FETCH, "prefetch page block_offset=%" PRIu64 " offset=%" PRIu64
             " size=%" PRIu32 " in_checkpoint=%d", page->block_offset,
@@ -4936,13 +4941,14 @@ static int smc_do_prefetch_page(RDMAContext *rdma, SMCInfo *smc_info,
                                 page->size, host_addr);
     }
 
-    ret = smc_rdma_read(rdma, block, page->offset, page->size, page->idx, NEED_SEND_SIGNAL);
+    ret = smc_rdma_read(rdma, block, page->offset, page->size, page->idx, NEED_SEND_SIGNAL, send_wr_id);
 
     return ret;
 }
 
 static int smc_pml_do_prefetch_page(RDMAContext *rdma, SMCInfo *smc_info,
-                                            SMCPMLPrefetchPage *page, int page_idx)
+                                            SMCPMLPrefetchPage *page, int page_idx, int need_send_signal,
+                                            uint64_t *wr_id_out)
 {
     RDMALocalBlock *block;
     uint8_t *host_addr;
@@ -4977,7 +4983,7 @@ static int smc_pml_do_prefetch_page(RDMAContext *rdma, SMCInfo *smc_info,
     nb_page_fetched++;
     smc_pml_prefetched_map_insert(smc_info, page->block_offset + page->offset, 
                                   nb_page_fetched);
-    ret = smc_rdma_read(rdma, block, page->offset, page->size, page_idx, NO_NEED_SEND_SIGNAL);
+    ret = smc_rdma_read(rdma, block, page->offset, page->size, page_idx, need_send_signal, wr_id_out);
     return ret;
 }
 
@@ -5078,7 +5084,6 @@ static int smc_pml_do_prefetch_dirty_pages(RDMAContext *rdma, SMCInfo *smc_info,
                                        int *complete_pages)
 {
     int ack_idx;
-    int nb_ack = 0;
     SMCPMLPrefetchPage *prefetch_page;
     int ret;
     int signal = 0;
@@ -5086,6 +5091,10 @@ static int smc_pml_do_prefetch_dirty_pages(RDMAContext *rdma, SMCInfo *smc_info,
     int idx;
     int nb_subsets;
     int nb_eles;
+    uint64_t send_wr_id;
+    int test_idx = 0;
+    int need_send_signal = NO_NEED_SEND_SIGNAL;
+    int wait_ack = NO_NEED_SEND_SIGNAL;
 
     *complete_pages = 0;
     idx = 0;
@@ -5096,12 +5105,42 @@ static int smc_pml_do_prefetch_dirty_pages(RDMAContext *rdma, SMCInfo *smc_info,
     while (idx < nb_eles) {
         prefetch_page = smc_pml_prefetch_pages_get_idex(smc_info, nb_subsets, idx);
         SMC_ASSERT(prefetch_page);
-        ret = smc_pml_do_prefetch_page(rdma, smc_info, prefetch_page, idx);
+
+        if(!(nb_post % 20))
+        {
+            while(wait_ack == NEED_SEND_SIGNAL)
+            {
+                /* Block until last WC produced is polled */
+                ret = smc_pml_try_ack_rdma_read(rdma, smc_info, false, &ack_idx);
+                if (ret < 0) {
+                    return ret;
+                } else if (ret > 0) {
+                    /* We have recv the next prefetch signal, ret is the signal type */
+                    SMC_ASSERT(signal == 0);
+                    signal = ret;
+                } else if (ack_idx != -1) {
+                    SMC_ASSERT(test_idx == ack_idx);
+                    wait_ack = NO_NEED_SEND_SIGNAL;
+                }
+            }
+            need_send_signal = NEED_SEND_SIGNAL;
+            wait_ack = NEED_SEND_SIGNAL;
+        }
+        else
+        {
+            need_send_signal = NO_NEED_SEND_SIGNAL;
+            wait_ack = NO_NEED_SEND_SIGNAL;
+        }
+        ret = smc_pml_do_prefetch_page(rdma, smc_info, prefetch_page, idx, need_send_signal, &send_wr_id);
         if ( ret < 0 ) {
             return ret;
         }
         ++nb_post;
         ++idx;
+        if(need_send_signal == NEED_SEND_SIGNAL)
+        {
+            test_idx = (send_wr_id & RDMA_WRID_BLOCK_MASK) >> RDMA_WRID_BLOCK_SHIFT;
+        }
 
         /* Wait here to see if there are any RDMA READ have completed */
         ret = smc_pml_try_ack_rdma_read(rdma, smc_info, false, &ack_idx);
@@ -5112,11 +5151,28 @@ static int smc_pml_do_prefetch_dirty_pages(RDMAContext *rdma, SMCInfo *smc_info,
             SMC_ASSERT(signal == 0);
             signal = ret;
         } else if (ack_idx != -1) {
-            ++nb_ack;
+            SMC_ASSERT(test_idx == ack_idx);
+            wait_ack = NO_NEED_SEND_SIGNAL;
         }
 
         if (signal) {
             break;
+        }
+    }
+
+    while(wait_ack == NEED_SEND_SIGNAL)
+    {
+        /* Block until last WC produced is polled */
+        ret = smc_pml_try_ack_rdma_read(rdma, smc_info, false, &ack_idx);
+        if (ret < 0) {
+            return ret;
+        } else if (ret > 0) {
+            /* We have recv the next prefetch signal, ret is the signal type */
+            SMC_ASSERT(signal == 0);
+            signal = ret;
+        } else if (ack_idx != -1) {
+            SMC_ASSERT(test_idx == ack_idx);
+            wait_ack = NO_NEED_SEND_SIGNAL;
         }
     }
 

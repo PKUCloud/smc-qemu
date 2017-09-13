@@ -5104,22 +5104,6 @@ static int smc_pml_do_prefetch_dirty_pages(RDMAContext *rdma, SMCInfo *smc_info,
     while (idx < nb_eles) {
         prefetch_page = smc_pml_prefetch_pages_get_idex(smc_info, nb_subsets, idx);
         SMC_ASSERT(prefetch_page);
-
-        while(wait_ack == NEED_SEND_SIGNAL)
-        {
-            /* Block until last WC produced is polled */
-            ret = smc_pml_try_ack_rdma_read(rdma, smc_info, false, &ack_idx);
-            if (ret < 0) {
-                return ret;
-            } else if (ret > 0) {
-                /* We have recv the next prefetch signal, ret is the signal type */
-                SMC_ASSERT(signal == 0);
-                signal = ret;
-            } else if (ack_idx != -1) {
-                SMC_ASSERT(test_idx == ack_idx);
-                wait_ack = NO_NEED_SEND_SIGNAL;
-            }
-        }
         wait_ack = NEED_SEND_SIGNAL;
         ret = smc_pml_do_prefetch_page(rdma, smc_info, prefetch_page, idx, NEED_SEND_SIGNAL, &send_wr_id);
         if ( ret < 0 ) {
@@ -5129,17 +5113,24 @@ static int smc_pml_do_prefetch_dirty_pages(RDMAContext *rdma, SMCInfo *smc_info,
         ++idx;
         test_idx = (send_wr_id & RDMA_WRID_BLOCK_MASK) >> RDMA_WRID_BLOCK_SHIFT;
 
-        /* Wait here to see if there are any RDMA READ have completed */
-        ret = smc_pml_try_ack_rdma_read(rdma, smc_info, false, &ack_idx);
-        if (ret < 0) {
-            return ret;
-        } else if (ret > 0) {
-            /* We have recv the next prefetch signal, ret is the signal type */
-            SMC_ASSERT(signal == 0);
-            signal = ret;
-        } else if (ack_idx != -1) {
-            SMC_ASSERT(test_idx == ack_idx);
-            wait_ack = NO_NEED_SEND_SIGNAL;
+        SMC_LOG(UNSIG, "try to fetch page #%d.", test_idx);
+
+        while(wait_ack == NEED_SEND_SIGNAL)
+        {
+            /* Block until last WC produced is polled */
+            ret = smc_pml_try_ack_rdma_read(rdma, smc_info, false, &ack_idx);
+            if (ret < 0) {
+                return ret;
+            } else if (ret > 0) {
+                /* We have recv the next prefetch signal, ret is the signal type */
+                SMC_LOG(UNSIG, "got a prefetch signal.");
+                SMC_ASSERT(signal == 0);
+                signal = ret;
+            } else if (ack_idx != -1) {
+                SMC_LOG(UNSIG, "got ack for page #%d, want #%d", ack_idx, test_idx);
+                SMC_ASSERT(test_idx == ack_idx);
+                wait_ack = NO_NEED_SEND_SIGNAL;
+            }
         }
 
         if (signal) {
@@ -5155,9 +5146,11 @@ static int smc_pml_do_prefetch_dirty_pages(RDMAContext *rdma, SMCInfo *smc_info,
             return ret;
         } else if (ret > 0) {
             /* We have recv the next prefetch signal, ret is the signal type */
+            SMC_LOG(UNSIG, "got a prefetch signal.");
             SMC_ASSERT(signal == 0);
             signal = ret;
         } else if (ack_idx != -1) {
+            SMC_LOG(UNSIG, "got ack for page #%d, want #%d", ack_idx, test_idx);
             SMC_ASSERT(test_idx == ack_idx);
             wait_ack = NO_NEED_SEND_SIGNAL;
         }

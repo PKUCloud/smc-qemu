@@ -215,6 +215,7 @@ void smc_init(SMCInfo *smc_info, void *opaque)
     smc_superset_init(&smc_info->pml_unsort_prefetch_pages, sizeof(SMCPMLPrefetchPage));
     smc_set_init(&smc_info->pml_backup_pages, sizeof(SMCPMLBackupPage));
     smc_info->pml_prefetched_map = g_hash_table_new(g_direct_hash, g_direct_equal);
+    smc_info->pml_total_prefetched_map = g_hash_table_new(g_direct_hash, g_direct_equal);
     smc_info->pml_xmit_speed = 0;
 #endif
     smc_info->opaque = opaque;
@@ -241,6 +242,7 @@ void smc_exit(SMCInfo *smc_info)
     smc_pml_backup_pages_reset(smc_info);
     smc_set_free(&smc_info->pml_backup_pages);
     g_hash_table_destroy(smc_info->pml_prefetched_map);
+    g_hash_table_destroy(smc_info->pml_total_prefetched_map);
 #endif
     smc_info->init = false;
     smc_info->enable_incheckpoint_bitmap = false;

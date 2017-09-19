@@ -105,6 +105,9 @@ typedef struct SMCPMLRoundPrefetchInfo{
 #define SMC_FETCH_CACHE_SOFT_CAP        3000
 #define SMC_PML_PREFETCH_ROUND_LIMIT    100
 
+#define SMC_PML_TOTAL_MAX_DIRTY_TIMES   1 << 31
+#define SMC_PML_MAX_SUBSET_IDX          10000
+
 typedef struct SMCInfo {
     bool init;
     SMCSet dirty_pages;
@@ -122,6 +125,8 @@ typedef struct SMCInfo {
     SMCSet pml_backup_pages;
     /* Used to find whether a given page has been prefetched before */
     GHashTable *pml_prefetched_map;
+    /* Used to store the total dirty times of a page */
+    GHashTable *pml_total_prefetched_map;
     int state;
     bool need_rollback;
     void *opaque;   /* QEMUFileRDMA */
@@ -277,6 +282,18 @@ static inline void smc_pml_prefetched_map_insert(SMCInfo *smc_info,
     //        " counter=%d", phy_addr, nb_page_prefetched);
 }
 
+static inline void smc_pml_total_prefetched_map_insert(SMCInfo *smc_info, 
+                                           uint64_t phy_addr, uint32_t nb_page_prefetched)
+{
+    gpointer key = (void *)(uintptr_t)phy_addr;
+    gpointer value = GUINT_TO_POINTER(nb_page_prefetched);
+
+    g_hash_table_insert(smc_info->pml_total_prefetched_map, key, value);
+
+    //SMC_LOG(PML, "insert to pml_prefetched_map phy_addr(offset+block_offset)=%" PRIu64 
+    //        " counter=%d", phy_addr, nb_page_prefetched);
+}
+
 static inline SMCFetchPage *smc_prefetch_map_lookup(SMCInfo *smc_info,
                                                     uint64_t phy_addr)
 {
@@ -290,6 +307,24 @@ static inline uint32_t smc_pml_prefetched_map_lookup
     gpointer value;
     uint32_t ret;
     value = g_hash_table_lookup(smc_info->pml_prefetched_map, 
+                             (void *)(uintptr_t)phy_addr);
+    if (value) {
+        ret = GPOINTER_TO_UINT(value);
+        //SMC_LOG(PML, "phy_addr(offset+block_offset)=%" PRIu64 " counter=%d",
+        //        phy_addr, ret);
+        return ret;
+    } else {
+        return 0;
+    }
+}
+
+
+static inline uint32_t smc_pml_total_prefetched_map_lookup
+                                            (SMCInfo *smc_info, uint64_t phy_addr)
+{
+    gpointer value;
+    uint32_t ret;
+    value = g_hash_table_lookup(smc_info->pml_total_prefetched_map, 
                              (void *)(uintptr_t)phy_addr);
     if (value) {
         ret = GPOINTER_TO_UINT(value);

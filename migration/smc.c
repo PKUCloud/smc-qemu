@@ -285,7 +285,7 @@ void smc_pml_unsort_prefetch_pages_insert(SMCInfo *smc_info,
     smc_superset_insert(&smc_info->pml_prefetch_pages, subset_idx, &page);
 }
 
-void my_qsort(void  *base,
+static void my_qsort(void  *base,
        size_t nel,
        size_t width,
        int (*comp)(const void *, const void *))
@@ -353,8 +353,8 @@ void smc_pml_sort_prefetch_pages(SMCInfo *smc_info)
 {
     SMCSet *subset;
 
-    subset = (SMCSet *)smc_superset_get_idex(smc_info->pml_prefetch_pages, 
-                                                smc_info->pml_prefetch_page.nb_subsets);
+    subset = (SMCSet *)smc_superset_get_idex(&(smc_info->pml_prefetch_pages), 
+                                                smc_info->pml_prefetch_pages.nb_subsets);
     my_qsort(subset->eles, subset->nb_eles, subset->ele_size, smc_pml_comp);
     /*
     int i;

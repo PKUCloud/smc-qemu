@@ -5103,21 +5103,24 @@ static int smc_pml_do_prefetch_dirty_pages(RDMAContext *rdma, SMCInfo *smc_info,
         ++nb_post;
         ++idx;
 
-        /* Wait here to see if there are any RDMA READ have completed */
-        ret = smc_pml_try_ack_rdma_read(rdma, smc_info, false, &ack_idx);
-        if (ret < 0) {
-            return ret;
-        } else if (ret > 0) {
-            /* We have recv the next prefetch signal, ret is the signal type */
-            SMC_ASSERT(signal == 0);
-            signal = ret;
-        } else if (ack_idx != -1) {
-            ++nb_ack;
-        }
+        /* Decrease the frequency polling the signal from src */
+        if (nb_post % 10 == 0 && nb_post != 0) {
+            ret = smc_pml_try_ack_rdma_read(rdma, smc_info, false, &ack_idx);
+            if (ret < 0) {
+                return ret;
+            } else if (ret > 0) {
+                /* We have recv the next prefetch signal, ret is the signal type */
+                SMC_ASSERT(signal == 0);
+                signal = ret;
+            } else if (ack_idx != -1) {
+                ++nb_ack;
+            }
 
-        if (signal) {
-            break;
+            if (signal) {
+                break;
+            }
         }
+        
     }
 
     SMC_STAT("Fetched %d pages (But there are %d pages which should be fetched)",

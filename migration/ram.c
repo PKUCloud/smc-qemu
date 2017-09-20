@@ -1100,8 +1100,6 @@ static void smc_pml_ram_find_and_prefetch_block(void)
     bool in_checkpoint = false;
     uint32_t total_dirty_times;
 
-    page_dirty_infos = g_malloc0(1000 * sizeof(uint64_t));
-
     block = QLIST_FIRST_RCU(&ram_list.blocks);
     offset = 0;
     /* reset pml_unsort_prefetch_pages */

@@ -278,23 +278,85 @@ void smc_pml_unsort_prefetch_pages_insert(SMCInfo *smc_info,
                               };
     
     SMC_ASSERT(smc_info->init);
-    SMC_LOG(GEN, "add into pml_unsort_prefetch_pages which block_offset=%" PRIu64 
+    /*SMC_LOG(GEN, "add into pml_unsort_prefetch_pages which block_offset=%" PRIu64 
             " offset=%" PRIu64 " size=%" PRIu32 " in_checkpoint=%d subset_idx=%d", 
-            block_offset, offset, size, in_checkpoint, subset_idx);
-
-    if (subset_idx >= smc_info->pml_unsort_prefetch_pages.cap) {
-        smc_superset_resize(&smc_info->pml_unsort_prefetch_pages, 
-                            subset_idx + 1);
-    }
-    if (subset_idx > smc_info->pml_unsort_prefetch_pages.nb_subsets) {
-        smc_info->pml_unsort_prefetch_pages.nb_subsets = subset_idx;
-    }
+            block_offset, offset, size, in_checkpoint, subset_idx);*/
     
-    smc_superset_insert(&smc_info->pml_unsort_prefetch_pages, subset_idx, &page);
+    smc_superset_insert(&smc_info->pml_prefetch_pages, subset_idx, &page);
+}
+
+void my_qsort(void  *base,
+       size_t nel,
+       size_t width,
+       int (*comp)(const void *, const void *))
+{
+    size_t wgap, i, j, k;
+    char tmp;
+
+    if ((nel > 1) && (width > 0)) {
+        SMC_ASSERT(nel <= ((size_t)(-1)) / width); /* check for overflow */
+        wgap = 0;
+        do {
+            wgap = 3 * wgap + 1;
+        } while (wgap < (nel-1)/3);
+        /* From the above, we know that either wgap == 1 < nel or */
+        /* ((wgap-1)/3 < (int) ((nel-1)/3) <= (nel-1)/3 ==> wgap <  nel. */
+        wgap *= width;          /* So this can not overflow if wnel doesn't. */
+        nel *= width;           /* Convert nel to 'wnel' */
+        do {
+            i = wgap;
+            do {
+                j = i;
+                do {
+                    register char *a;
+                    register char *b;
+
+                    j -= wgap;
+                    a = j + ((char *)base);
+                    b = a + wgap;
+                    if ((*comp)(a, b) <= 0) {
+                        break;
+                    }
+                    k = width;
+                    do {
+                        tmp = *a;
+                        *a++ = *b;
+                        *b++ = tmp;
+                    } while (--k);
+                } while (j >= wgap);
+                i += width;
+            } while (i < nel);
+            wgap = (wgap - width)/3;
+        } while (wgap);
+    }
+}
+
+
+static int smc_pml_comp(const void *ele1, const void *ele2)
+{
+    uint64_t block_offset1, block_offset2;
+    uint64_t offset1, offset2;
+    uint32_t total_dirty_times1, total_dirty_times2;
+    block_offset1 = ((SMCPMLPrefetchPage *)ele1)->block_offset;
+    offset1 = ((SMCPMLPrefetchPage *)ele1)->offset;
+    block_offset2 = ((SMCPMLPrefetchPage *)ele2)->block_offset;
+    offset2 = ((SMCPMLPrefetchPage *)ele1)->offset;
+    total_dirty_times1 = smc_pml_total_prefetched_map_lookup(&glo_smc_info,
+                                                      block_offset1 + offset1);
+    total_dirty_times2 = smc_pml_total_prefetched_map_lookup(&glo_smc_info,
+                                                      block_offset2 + offset2);
+    return total_dirty_times1 - total_dirty_times2;
+
 }
 
 void smc_pml_sort_prefetch_pages(SMCInfo *smc_info)
 {
+    SMCSet *subset;
+
+    subset = (SMCSet *)smc_superset_get_idex(smc_info->pml_prefetch_pages, 
+                                                smc_info->pml_prefetch_page.nb_subsets);
+    my_qsort(subset->eles, subset->nb_eles, subset->ele_size, smc_pml_comp);
+    /*
     int i;
     SMCSuperSet *unsort_prefetch_pages = &smc_info->pml_unsort_prefetch_pages;
     SMCSet * unsort_subset;
@@ -309,6 +371,7 @@ void smc_pml_sort_prefetch_pages(SMCInfo *smc_info)
             //        smc_info->pml_prefetch_pages.nb_subsets, unsort_subset->nb_eles);
         }
     }
+    */
 }
 
 void smc_dirty_pages_reset(SMCInfo *smc_info)

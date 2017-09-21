@@ -1049,6 +1049,8 @@ static void *mc_thread(void *opaque)
     bool blk_enabled = false;
     int64_t fetch_time;
     uint64_t prefetch_round;
+    int64_t capture_start_time;
+    int64_t capture_end_time;
 
     smc_init(&glo_smc_info, f_opaque);
 
@@ -1335,7 +1337,10 @@ static void *mc_thread(void *opaque)
                 ram_pml_clear_incheckpoint_bitmap();
                 break;
             }
+            capture_start_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
             smc_pml_capture_dirty_pages(&mc,s);
+            capture_end_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
+            SMC_LOG(SORT, "Capture and sort dirty pages takes %ld ms.\n", capture_end_time - capture_start_time);
             if (prefetch_round > 0) {
                 smc_pml_send_prefetch_signal(f_opaque, false);
             } 

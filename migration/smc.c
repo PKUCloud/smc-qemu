@@ -372,7 +372,7 @@ void smc_pml_unsort_prefetch_pages_insert(SMCInfo *smc_info,
     ((SMCPMLPrefetchPage *)new_ele)->size = size;
     //the next region stores next slot's index.
     ((SMCPMLPrefetchPage *)new_ele)->next = subset->nb_eles;
-    ((SMCPMLPrefetchPage *)new_ele)->in_checkpoint = in_checkpoint
+    ((SMCPMLPrefetchPage *)new_ele)->in_checkpoint = in_checkpoint;
     SMC_LOG(GEN, "after insert, there are %d pages in total", subset->nb_eles);
 }
 

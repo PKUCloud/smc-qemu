@@ -4088,31 +4088,44 @@ int smc_pml_send_prefetch_info(void *opaque, SMCInfo *smc_info)
     RDMAControlHeader head = { .type = SMC_PML_RDMA_CONTROL_PREFETCH_INFO,
                                .repeat = 1 };   
     int ret;
-    SMCPMLPrefetchPage *prefetch_pages;
+    uint8_t *prefetch_pages;
     int nb_pages;
     int pages_to_send;
     int nb_subsets;
+    int round = 0;
     static const int MAX_NB_PAGES = (RDMA_CONTROL_MAX_BUFFER -
                                      sizeof(RDMAControlHeader)) /
                                     sizeof(SMCPMLPrefetchPage);
 
     nb_subsets = smc_info->pml_prefetch_pages.nb_subsets;
+
+    /************************************************************************************
+    * TO DO:
+    * Now we just capture about 1000 dirty pages every round
+    * so nb_pages always is smc_pml_prefetch_pages_count(smc_info, nb_subsets)
+    * But if for some reason we can capture more pages, more than SMC_NUM_DIRTY_PAGES_SEND,
+    * then we cannot send the whole linked list to the back_up end, which will cause
+    * core dump bugs.
+    *************************************************************************************/
     nb_pages = min(smc_pml_prefetch_pages_count(smc_info, nb_subsets), 
                    SMC_NUM_DIRTY_PAGES_SEND);
     prefetch_pages = smc_pml_prefetch_pages_info(smc_info);
 
-    head.padding = nb_pages * sizeof(*prefetch_pages);
+    head.padding = nb_pages * sizeof(SMCPMLPrefetchPage) + 2;
     SMC_LOG(PML, "send SMC_PML_RDMA_CONTROL_PREFETCH_INFO %d prefetch pages info"
             , nb_pages);
     
     do {
         pages_to_send = min(MAX_NB_PAGES, nb_pages);
-        head.len = pages_to_send * sizeof(*prefetch_pages);
+        head.len = pages_to_send * sizeof(SMCPMLPrefetchPage);
+        if (round == 0) {
+            head.len += 2;
+        }
         SMC_ASSERT(head.len + sizeof(head) <= RDMA_CONTROL_MAX_BUFFER);
         /* TODO: We should translate the byte order before and after network
                  * transfer.
                  */
-        ret = qemu_rdma_exchange_send(rdma, &head, (uint8_t *)prefetch_pages, NULL,
+        ret = qemu_rdma_exchange_send(rdma, &head, prefetch_pages, NULL,
                 NULL, NULL);
         if (ret < 0) {
             SMC_ERR("qemu_rdma_exchange_send() failed to send dirty pages info");
@@ -4120,7 +4133,9 @@ int smc_pml_send_prefetch_info(void *opaque, SMCInfo *smc_info)
         }
 
         nb_pages -= pages_to_send;
-        prefetch_pages += pages_to_send;
+        prefetch_pages += pages_to_send * sizeof(SMCPMLPrefetchPage);
+        //Now round should not increase, for we won't prefetch that many dirty pages.
+        round++;
     } while (nb_pages);
     return 0;
 }
@@ -4212,7 +4227,7 @@ int smc_pml_recv_prefetch_info(void *opaque, SMCInfo *smc_info)
                 break;
             }
         }
-        pages_to_save = head.len / sizeof(SMCPMLPrefetchPage);
+        pages_to_save = (head.len - 2) / sizeof(SMCPMLPrefetchPage);
         /* TODO: We should translate the byte order before and after network
          * transfer.
          */

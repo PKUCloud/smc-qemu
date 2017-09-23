@@ -16,6 +16,7 @@
  * which can be found by using $ ibv_devinfo -v
  */
 #define SMC_NUM_DIRTY_PAGES_SEND        16351
+#define SMC_MAX_PREFETCH_OFFSET         65535
 #define SMC_PML_PREFETCH_ROUND          35
 /* default checkpoint frequency */
 #define MC_DEFAULT_CHECKPOINT_FREQ_MS   50
@@ -37,6 +38,7 @@ typedef struct SMCPMLPrefetchPage {
     /* Offset inside the RAMBlock which contains the page */
     uint64_t offset;
     uint32_t size;
+    uint16_t next;
     bool in_checkpoint;
 } SMCPMLPrefetchPage;
 
@@ -213,7 +215,7 @@ uint8_t *smc_host_addr_from_offset(void *opaque, uint64_t block_offset,
 void smc_prefetch_map_gen_from_pages(SMCInfo *smc_info);
 void smc_update_prefetch_cache(SMCInfo *smc_info);
 int smc_load_page_stub(QEMUFile *f, void *opaque, void *host_addr, long size);
-SMCPMLPrefetchPage *smc_pml_prefetch_pages_info(SMCInfo *smc_info);
+uint8_t *smc_pml_prefetch_pages_info(SMCInfo *smc_info);
 SMCPMLPrefetchPage *smc_pml_prefetch_pages_get_idex(SMCInfo *smc_info,
                                              int superset_idx, int subset_idx);
 int smc_pml_prefetch_pages_count(SMCInfo *smc_info, int superset_idx);

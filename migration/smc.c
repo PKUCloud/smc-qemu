@@ -358,7 +358,7 @@ void smc_pml_unsort_prefetch_pages_insert(SMCInfo *smc_info,
     SMCSet *subset;
     uint8_t *new_ele;
 
-    subset = (SMCSet *)smc_superset_get_idex(smc_superset, subset_idx);
+    subset = (SMCSet *)smc_superset_get_idex(&smc_info->pml_prefetch_pages, subset_idx);
 
     if (subset->cap == subset->nb_eles) {
         smc_prefetch_set_resize(subset, subset->cap + SMC_SET_INIT_CAP);
@@ -448,7 +448,7 @@ void smc_pml_sort_prefetch_pages(SMCInfo *smc_info)
     uint8_t *eles;
     uint16_t *p_head_idx;
     uint16_t first_idx, second_idx;
-    uint32_t length, interval;
+    uint32_t interval;
     SMCPMLPrefetchPage temp;
     SMCPMLPrefetchPage *pre;
     SMCPMLPrefetchPage *pages;
@@ -468,7 +468,7 @@ void smc_pml_sort_prefetch_pages(SMCInfo *smc_info)
                                                 smc_info->pml_prefetch_pages.nb_subsets);
 
     //Make the last element's next region "points to NULL"
-    last_ele = subset->eles + 2 + (subset->nb_eles - 1) * subset->ele_size;
+    last_ele = (SMCPMLPrefetchPage *)(subset->eles + 2 + (subset->nb_eles - 1) * subset->ele_size);
     last_ele->next = SMC_MAX_PREFETCH_OFFSET;
     
     eles = subset->eles;
@@ -476,7 +476,7 @@ void smc_pml_sort_prefetch_pages(SMCInfo *smc_info)
     pages = (SMCPMLPrefetchPage *)(eles + 2);
 
     //Merge Sort begins.
-    for (; interval <= len; interval *= 2) {
+    for (; interval <= subset->nb_eles; interval *= 2) {
         pre = &temp;
         first_idx = pre->next;
         second_idx = pre->next;
@@ -516,7 +516,7 @@ void smc_pml_sort_prefetch_pages(SMCInfo *smc_info)
                 first_idx = pages[first_idx].next;
                 fvisit++;
             }
-            while (svisit < interval && second_idx != SMC_MAX_PREFETCH_OFFSE) {
+            while (svisit < interval && second_idx != SMC_MAX_PREFETCH_OFFSET) {
                 pre->next = second_idx;
                 pre = &(pages[second_idx]);
                 second_idx = pages[second_idx].next;
@@ -935,7 +935,7 @@ SMCPMLPrefetchPage *smc_pml_prefetch_pages_get_idex(SMCInfo *smc_info,
     SMC_ASSERT(subset_idx <= subset->nb_eles);
 
     pages = (SMCPMLPrefetchPage *)(subset->eles + 2);
-    cur_idx = (uint16_t)subset->eles;//Get head's index.
+    cur_idx = *((uint16_t *)(subset->eles));//Get head's index.
 
     while(idx < subset_idx) {
         cur_idx = pages[cur_idx].next;

@@ -296,6 +296,15 @@ void smc_pml_sort_prefetch_pages(SMCInfo *smc_info)
     int i;
     SMCSuperSet *unsort_prefetch_pages = &smc_info->pml_unsort_prefetch_pages;
     SMCSet * unsort_subset;
+    SMCSet *subset;
+    SMCPMLPrefetchPage *pages;
+    uint64_t block_offset1, block_offset2;
+    uint64_t offset1, offset2;
+    uint32_t total_dirty_times1, total_dirty_times2;
+
+    subset = (SMCSet *)smc_superset_get_idex(&(smc_info->pml_prefetch_pages), 
+                                                smc_info->pml_prefetch_pages.nb_subsets);
+    pages = (SMCPMLPrefetchPage *)(subset->eles);    
 
     for (i = 0; i <= unsort_prefetch_pages->nb_subsets; i++) {
         unsort_subset = (SMCSet *)(unsort_prefetch_pages->subsets + i * sizeof(SMCSet));
@@ -307,6 +316,18 @@ void smc_pml_sort_prefetch_pages(SMCInfo *smc_info)
             //        smc_info->pml_prefetch_pages.nb_subsets, unsort_subset->nb_eles);
         }
     }
+    SMC_LOG(SORT, "There are %u dirty pages.", subset->nb_eles);
+    i = 0;
+    /*
+    while (i < subset->nb_eles) {
+        block_offset1 = pages[i].block_offset;
+        offset1 = pages[i].offset;
+        total_dirty_times1 = smc_pml_prefetched_map_lookup(&glo_smc_info,
+                                                                  block_offset1 + offset1);
+        SMC_LOG(SORT, "After sort, the %uth page is dirty for %u times.", i, total_dirty_times1);
+        i++;
+    }
+    */
 }
 
 void smc_dirty_pages_reset(SMCInfo *smc_info)

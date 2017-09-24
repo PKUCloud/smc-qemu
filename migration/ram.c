@@ -1132,7 +1132,6 @@ static void smc_pml_ram_find_and_prefetch_block(void)
             }
             smc_pml_total_prefetched_map_insert(&glo_smc_info, block->offset + offset,
                                           total_dirty_times);
-            
             smc_pml_unsort_prefetch_pages_insert(&glo_smc_info, block->offset,
                                          offset, in_checkpoint, 
                                          TARGET_PAGE_SIZE, 

@@ -1316,14 +1316,14 @@ static void *mc_thread(void *opaque)
         prefetch_round = 0;
         //TODO: remain_time = freq_ms - s->xmit_time, but we may get 0 remain time!
         remain_time = remain_time * 1000;
-        SMC_LOG(PML, "--------------------------------"
+        SMC_LOG(SORT, "--------------------------------"
                 "We have %" PRIu64 " microseconds remains."
                 "--------------------------------", remain_time);
 
         while (true) {
             wait_time = smc_pml_calculate_xmit_sleep_time(&glo_smc_info, remain_time);
             remain_time -= wait_time;
-            SMC_LOG(PML, "===============================" 
+            SMC_LOG(SORT, "===============================" 
                     "let VM run %" PRIu64 " microseconds"
                     "==============================="
                     "remain_time = %" PRIu64,

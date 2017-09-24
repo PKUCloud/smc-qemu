@@ -354,7 +354,6 @@ void smc_pml_unsort_prefetch_pages_insert(SMCInfo *smc_info,
             block_offset, offset, size, in_checkpoint, subset_idx);*/
     
     //smc_superset_insert(&smc_info->pml_prefetch_pages, subset_idx, &page);
-
     SMCSet *subset;
     uint8_t *new_ele;
 
@@ -363,7 +362,7 @@ void smc_pml_unsort_prefetch_pages_insert(SMCInfo *smc_info,
     if (subset->cap == subset->nb_eles) {
         smc_prefetch_set_resize(subset, subset->cap + SMC_SET_INIT_CAP);
     }
-
+    SMC_LOG(SORT, "before insert, there are %d pages in total", subset->nb_eles);
     new_ele = subset->eles + 2 + subset->nb_eles * subset->ele_size;
     subset->nb_eles++;
     //Init the structure here, so we reduce some memory copy.
@@ -373,73 +372,8 @@ void smc_pml_unsort_prefetch_pages_insert(SMCInfo *smc_info,
     //the next region stores next slot's index.
     ((SMCPMLPrefetchPage *)new_ele)->next = subset->nb_eles;
     ((SMCPMLPrefetchPage *)new_ele)->in_checkpoint = in_checkpoint;
-    SMC_LOG(GEN, "after insert, there are %d pages in total", subset->nb_eles);
+    SMC_LOG(SORT, "after insert, there are %d pages in total", subset->nb_eles);
 }
-
-static void my_qsort(void  *base,
-       size_t nel,
-       size_t width,
-       int (*comp)(const void *, const void *))
-{
-    size_t wgap, i, j, k;
-    char tmp;
-
-    if ((nel > 1) && (width > 0)) {
-        SMC_ASSERT(nel <= ((size_t)(-1)) / width); /* check for overflow */
-        wgap = 0;
-        do {
-            wgap = 3 * wgap + 1;
-        } while (wgap < (nel-1)/3);
-        /* From the above, we know that either wgap == 1 < nel or */
-        /* ((wgap-1)/3 < (int) ((nel-1)/3) <= (nel-1)/3 ==> wgap <  nel. */
-        wgap *= width;          /* So this can not overflow if wnel doesn't. */
-        nel *= width;           /* Convert nel to 'wnel' */
-        do {
-            i = wgap;
-            do {
-                j = i;
-                do {
-                    register char *a;
-                    register char *b;
-
-                    j -= wgap;
-                    a = j + ((char *)base);
-                    b = a + wgap;
-                    if ((*comp)(a, b) <= 0) {
-                        break;
-                    }
-                    k = width;
-                    do {
-                        tmp = *a;
-                        *a++ = *b;
-                        *b++ = tmp;
-                    } while (--k);
-                } while (j >= wgap);
-                i += width;
-            } while (i < nel);
-            wgap = (wgap - width)/3;
-        } while (wgap);
-    }
-}
-
-
-static int smc_pml_comp(const void *ele1, const void *ele2)
-{
-    uint64_t block_offset1, block_offset2;
-    uint64_t offset1, offset2;
-    uint32_t total_dirty_times1, total_dirty_times2;
-    block_offset1 = ((SMCPMLPrefetchPage *)ele1)->block_offset;
-    offset1 = ((SMCPMLPrefetchPage *)ele1)->offset;
-    block_offset2 = ((SMCPMLPrefetchPage *)ele2)->block_offset;
-    offset2 = ((SMCPMLPrefetchPage *)ele1)->offset;
-    total_dirty_times1 = smc_pml_total_prefetched_map_lookup(&glo_smc_info,
-                                                      block_offset1 + offset1);
-    total_dirty_times2 = smc_pml_total_prefetched_map_lookup(&glo_smc_info,
-                                                      block_offset2 + offset2);
-    return total_dirty_times1 - total_dirty_times2;
-
-}
-
 //Use merge sort to sort the SMCPMLPrefetchPage array, but we regard it as a linked list.
 
 void smc_pml_sort_prefetch_pages(SMCInfo *smc_info)
@@ -448,7 +382,7 @@ void smc_pml_sort_prefetch_pages(SMCInfo *smc_info)
     uint8_t *eles;
     uint16_t *p_head_idx;
     uint16_t first_idx, second_idx;
-    uint32_t interval;
+    uint32_t interval = 1;
     SMCPMLPrefetchPage temp;
     SMCPMLPrefetchPage *pre;
     SMCPMLPrefetchPage *pages;
@@ -456,6 +390,7 @@ void smc_pml_sort_prefetch_pages(SMCInfo *smc_info)
 
     //Declare temp variables used in the loop here.
     uint32_t i;
+    uint16_t si;
     uint32_t fvisit = 0, svisit = 0;
     uint64_t block_offset1, block_offset2;
     uint64_t offset1, offset2;
@@ -475,6 +410,11 @@ void smc_pml_sort_prefetch_pages(SMCInfo *smc_info)
     p_head_idx = (uint16_t *)eles;
     pages = (SMCPMLPrefetchPage *)(eles + 2);
 
+    
+    for (i = 0; i < subset->nb_eles; ++i) {
+        SMC_LOG(SORT, "Before sort, the %uth page to prefetch points to %uth.", i, pages[i].next);
+    }
+    
     //Merge Sort begins.
     for (; interval <= subset->nb_eles; interval *= 2) {
         pre = &temp;
@@ -527,6 +467,22 @@ void smc_pml_sort_prefetch_pages(SMCInfo *smc_info)
         }
     }
     *p_head_idx = temp.next;
+    si = *p_head_idx;
+    i = 0;
+    SMC_LOG(SORT, "Sort done");
+    
+    while (si != SMC_MAX_PREFETCH_OFFSET && i < subset->nb_eles) {
+        block_offset1 = pages[si].block_offset;
+        offset1 = pages[si].offset;
+        total_dirty_times1 = smc_pml_total_prefetched_map_lookup(&glo_smc_info,
+                                                                  block_offset1 + offset1);
+        SMC_LOG(SORT, "After sort, the %uth page is dirty for %u times, and points to %uth page.", 
+                            si, total_dirty_times1, pages[si].next);
+        si = pages[si].next;
+        i++;
+    }
+    
+    
 }
 
 void smc_dirty_pages_reset(SMCInfo *smc_info)

@@ -1051,6 +1051,7 @@ static void *mc_thread(void *opaque)
     uint64_t prefetch_round;
     int64_t capture_start_time;
     int64_t capture_end_time;
+    int64_t temp_xmit_time;
 
     smc_init(&glo_smc_info, f_opaque);
 
@@ -1322,6 +1323,13 @@ static void *mc_thread(void *opaque)
 
         while (true) {
             wait_time = smc_pml_calculate_xmit_sleep_time(&glo_smc_info, remain_time);
+            if (prefetch_round == 0) {
+                //s->xmit_time: ms; wait_time, remain_time: us.
+                temp_xmit_time  = s->xmit_time * 1000;
+                wait_time = (temp_xmit_time > wait_time) ? 0 : (wait_time - temp_xmit_time);
+                SMC_LOG(SORT, "Xmit_time: %ld, remain time: %ld, wait_time: %ld.", temp_xmit_time,
+                                remain_time, wait_time);
+            }
             remain_time -= wait_time;
             SMC_LOG(PML, "===============================" 
                     "let VM run %" PRIu64 " microseconds"
@@ -1331,7 +1339,7 @@ static void *mc_thread(void *opaque)
             if (wait_time) {
                 g_usleep(wait_time);
             }
-            if (remain_time <= 0 && prefetch_round) {
+            if (remain_time <= 0) {
                 /* Prefetching done */
                 smc_pml_send_prefetch_signal(f_opaque, true);
                 ram_pml_clear_incheckpoint_bitmap();
@@ -1340,7 +1348,7 @@ static void *mc_thread(void *opaque)
             capture_start_time = qemu_clock_get_us(QEMU_CLOCK_REALTIME);
             smc_pml_capture_dirty_pages(&mc,s);
             capture_end_time = qemu_clock_get_us(QEMU_CLOCK_REALTIME);
-            SMC_LOG(SORT, "Capture and sort dirty pages takes %ld us.\n", capture_end_time - capture_start_time);
+            SMC_LOG(SORT, "Round %lu, prefetch Capture and sort dirty pages takes %ld us.\n", prefetch_round, capture_end_time - capture_start_time);
             if (prefetch_round > 0) {
                 smc_pml_send_prefetch_signal(f_opaque, false);
             } 

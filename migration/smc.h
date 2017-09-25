@@ -16,9 +16,9 @@
  * which can be found by using $ ibv_devinfo -v
  */
 #define SMC_NUM_DIRTY_PAGES_SEND        16351
-#define SMC_PML_PREFETCH_ROUND          35
+#define SMC_PML_PREFETCH_ROUND          10
 /* default checkpoint frequency */
-#define MC_DEFAULT_CHECKPOINT_FREQ_MS   50
+#define MC_DEFAULT_CHECKPOINT_FREQ_MS   5
 
 /* Info about a dirty page within a chunk */
 typedef struct SMCDirtyPage {

@@ -169,6 +169,7 @@ void smc_prefetch_pages_insert_from_buf(SMCInfo *smc_info, const void *buf,
 int smc_send_dirty_info(void *opaque, SMCInfo *smc_info);
 int smc_pml_send_prefetch_signal(void *opaque, bool stop);
 int smc_pml_send_prefetch_info(void *opaque, SMCInfo *smc_info);
+int smc_pml_send_empty_prefetch_info(void *opaque, SMCInfo *smc_info);
 int smc_recv_dirty_info(void *opaque, SMCInfo *smc_info);
 int smc_pml_recv_prefetch_info(void *opaque, SMCInfo *smc_info);
 int smc_recv_prefetch_info(void *opaque, SMCInfo *smc_info,

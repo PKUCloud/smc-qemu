@@ -1340,6 +1340,12 @@ static void *mc_thread(void *opaque)
                 g_usleep(wait_time);
             }
             if (remain_time <= 0) {
+                if (!prefetch_round) {
+                    /* Have no time to prefetch, so send an empty prefetch info first,
+                     * then send stop signal.
+                     */
+                    smc_pml_send_empty_prefetch_info(f_opaque, &glo_smc_info);
+                }
                 /* Prefetching done */
                 smc_pml_send_prefetch_signal(f_opaque, true);
                 ram_pml_clear_incheckpoint_bitmap();

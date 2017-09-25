@@ -1345,6 +1345,7 @@ static void *mc_thread(void *opaque)
                      * then send stop signal.
                      */
                     smc_pml_send_empty_prefetch_info(f_opaque, &glo_smc_info);
+                    smc_pml_prefetch_pages_next_subset(&glo_smc_info);
                 }
                 /* Prefetching done */
                 smc_pml_send_prefetch_signal(f_opaque, true);

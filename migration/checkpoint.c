@@ -1051,6 +1051,7 @@ static void *mc_thread(void *opaque)
     uint64_t prefetch_round;
     int64_t capture_start_time;
     int64_t capture_end_time;
+    int64_t capture_time;
     int64_t temp_xmit_time;
 
     smc_init(&glo_smc_info, f_opaque);
@@ -1315,9 +1316,10 @@ static void *mc_thread(void *opaque)
 
 #if defined(SMC_PML_PREFETCH)
         prefetch_round = 0;
+        capture_time = 0;
         //TODO: remain_time = freq_ms - s->xmit_time, but we may get 0 remain time!
         remain_time = remain_time * 1000;
-        SMC_LOG(PML, "--------------------------------"
+        SMC_LOG(SORT, "--------------------------------"
                 "We have %" PRIu64 " microseconds remains."
                 "--------------------------------", remain_time);
 
@@ -1329,9 +1331,11 @@ static void *mc_thread(void *opaque)
                 wait_time = (temp_xmit_time > wait_time) ? 0 : (wait_time - temp_xmit_time);
                 SMC_LOG(SORT, "Xmit_time: %ld, remain time: %ld, wait_time: %ld.", temp_xmit_time,
                                 remain_time, wait_time);
+            } else {
+                wait_time = (capture_time > wait_time) ? 0 : wait_time - capture_time;
             }
             remain_time -= wait_time;
-            SMC_LOG(PML, "===============================" 
+            SMC_LOG(SORT, "===============================" 
                     "let VM run %" PRIu64 " microseconds"
                     "==============================="
                     "remain_time = %" PRIu64,
@@ -1355,6 +1359,8 @@ static void *mc_thread(void *opaque)
             capture_start_time = qemu_clock_get_us(QEMU_CLOCK_REALTIME);
             smc_pml_capture_dirty_pages(&mc,s);
             capture_end_time = qemu_clock_get_us(QEMU_CLOCK_REALTIME);
+            capture_time = capture_end_time - capture_start_time;
+            
             SMC_LOG(SORT, "Round %lu, prefetch Capture and sort dirty pages takes %ld us.\n", prefetch_round, capture_end_time - capture_start_time);
             if (prefetch_round > 0) {
                 smc_pml_send_prefetch_signal(f_opaque, false);
@@ -1362,6 +1368,7 @@ static void *mc_thread(void *opaque)
             smc_pml_send_prefetch_info(f_opaque, &glo_smc_info);
             smc_pml_prefetch_pages_next_subset(&glo_smc_info);
             ++prefetch_round;
+            remain_time = (remain_time < capture_time ) ? 0 : (remain_time - capture_time);
         }
 
         smc_pml_recv_round_prefetched_num(f_opaque, &glo_smc_info);

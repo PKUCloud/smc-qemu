@@ -1135,7 +1135,7 @@ static void *mc_thread(void *opaque)
         }
         if (!(s->checkpoints % SMC_PML_CLR_TOTAL_MAP_RDS) && !(s->checkpoints)) {
             smc_pml_total_prefetched_map_reset(&glo_smc_info);
-            SMC_LOG(TEST_SORT, "Clear the total dirty map every 1000 checkpoints.");
+            SMC_LOG(SORT, "Clear the total dirty map every 1000 checkpoints.");
         }
 #endif
         slab = mc_slab_start(&mc);

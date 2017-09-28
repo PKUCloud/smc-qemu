@@ -142,11 +142,13 @@ typedef struct SMCInfo {
     //bool need_clear_incheckpoint_bitmap;
     /* store the prefetched info of each round */
     SMCPMLRoundPrefetchInfo  pml_round_prefetch_info[SMC_PML_PREFETCH_ROUND_LIMIT];
-    /* store the prefetched pages' info temporary when we sorting them */
-    SMCSuperSet pml_unsort_prefetch_pages;
     /* dirty page transmission speed (pages per millisecond) */
     double pml_xmit_speed;
     bool early_flush_buffer;
+#ifdef DEBUG_SMC
+    int max_eles;
+    int nb_more_than_1000;
+#endif
 } SMCInfo;
 
 extern SMCInfo glo_smc_info;
@@ -163,7 +165,6 @@ void smc_pml_unsort_prefetch_pages_insert(SMCInfo *smc_info,
 void smc_pml_sort_prefetch_pages(SMCInfo *smc_info);
 void smc_pml_prefetch_pages_next_subset(SMCInfo *smc_info);
 void smc_pml_prefetch_pages_reset(SMCInfo *smc_info);
-void smc_pml_unsort_prefetch_pages_reset(SMCInfo *smc_info);
 void smc_pml_prefetch_pages_insert_from_buf(SMCInfo *smc_info, 
                                      const void *buf, int nb_pages);
 void smc_dirty_pages_reset(SMCInfo *smc_info);

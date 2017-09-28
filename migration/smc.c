@@ -250,7 +250,6 @@ void smc_init(SMCInfo *smc_info, void *opaque)
 #endif
 #ifdef SMC_PML_PREFETCH
     smc_superset_init(&smc_info->pml_prefetch_pages, sizeof(SMCPMLPrefetchPage));
-    smc_superset_init(&smc_info->pml_unsort_prefetch_pages, sizeof(SMCPMLPrefetchPage));
     smc_set_init(&smc_info->pml_backup_pages, sizeof(SMCPMLBackupPage));
     smc_info->pml_prefetched_map = g_hash_table_new(g_direct_hash, g_direct_equal);
     smc_info->pml_total_prefetched_map = g_hash_table_new(g_direct_hash, g_direct_equal);
@@ -260,6 +259,10 @@ void smc_init(SMCInfo *smc_info, void *opaque)
     smc_info->init = true;
     smc_info->enable_incheckpoint_bitmap = false;
     //smc_info->need_clear_incheckpoint_bitmap = false;
+#ifdef DEBUG_SMC
+    smc_info->max_eles = 0;
+    smc_info->nb_more_than_1000 = 0;
+#endif
 }
 
 void smc_exit(SMCInfo *smc_info)
@@ -276,11 +279,15 @@ void smc_exit(SMCInfo *smc_info)
 #endif
 #ifdef SMC_PML_PREFETCH
     smc_superset_free(&smc_info->pml_prefetch_pages);
-    smc_superset_free(&smc_info->pml_unsort_prefetch_pages);
+    printf("********** smc_info->pml_prefetch_pages freed **********");
     smc_pml_backup_pages_reset(smc_info);
+    printf("********** smc_info->pml_backup_pages resetted **********");
     smc_set_free(&smc_info->pml_backup_pages);
+    printf("********** smc_info->pml_backup_pages freed **********");
     g_hash_table_destroy(smc_info->pml_prefetched_map);
+    printf("********** smc_info->pml_prefetched_map destroyed **********");
     g_hash_table_destroy(smc_info->pml_total_prefetched_map);
+    printf("********** smc_info->pml_total_prefetched_map destroyed **********");
 #endif
     smc_info->init = false;
     smc_info->enable_incheckpoint_bitmap = false;
@@ -358,8 +365,6 @@ void smc_pml_sort_prefetch_pages(SMCInfo *smc_info)
     SMCPMLPrefetchPage *pre;
     SMCPMLPrefetchPage *pages;
     SMCPMLPrefetchPage *last_ele;
-    int max_eles = 0;
-    int nb_more_than_1000 = 0;
 
     /* Declare temp variables used in the loop here.*/
     uint32_t i;
@@ -441,14 +446,16 @@ void smc_pml_sort_prefetch_pages(SMCInfo *smc_info)
         }
     }
     *p_head_idx = temp.next;
-    if (subset->nb_eles > max_eles) {
-        max_eles = subset->nb_eles;
+#ifdef DEBUG_SMC
+    if (subset->nb_eles > smc_info->max_eles) {
+        smc_info->max_eles = subset->nb_eles;
     }
     if (subset->nb_eles > 1000) {
-        nb_more_than_1000++;
+        smc_info->nb_more_than_1000++;
     }
+#endif
     SMC_LOG(SORT, "There are %d dirty pages, max is %d, more than 1000 dirty pages for %d times.", 
-                    subset->nb_eles, max_eles, nb_more_than_1000);
+                    subset->nb_eles, smc_info->max_eles, smc_info->nb_more_than_1000);
     
     /*
     si = *p_head_idx;
@@ -481,14 +488,6 @@ void smc_pml_prefetch_pages_reset(SMCInfo *smc_info)
     smc_superset_reset(&smc_info->pml_prefetch_pages);
     SMC_LOG(GEN, "after reset pml_prefetch_pages subset=%d", 
                 smc_info->pml_prefetch_pages.nb_subsets);
-}
-
-void smc_pml_unsort_prefetch_pages_reset(SMCInfo *smc_info)
-{
-    SMC_ASSERT(smc_info->init);
-    smc_superset_reset(&smc_info->pml_unsort_prefetch_pages);
-    SMC_LOG(GEN, "after reset pml_unsort_prefetch_pages subset=%d", 
-                smc_info->pml_unsort_prefetch_pages.nb_subsets);
 }
 
 void smc_dirty_pages_insert_from_buf(SMCInfo *smc_info, const void *buf,
@@ -577,7 +576,7 @@ void smc_pml_backup_pages_reset(SMCInfo *smc_info)
     int nb_pages = smc_info->pml_backup_pages.nb_eles;
     int i;
 
-    SMC_LOG(GEN, "pml_backup_pages=%d", nb_pages);
+    SMC_LOG(SORT, "pml_backup_pages=%d", nb_pages);
     SMC_ASSERT(smc_info->init);
     for (i = 0; i < nb_pages; ++i) {
         g_free(page->data);

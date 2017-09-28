@@ -14,7 +14,7 @@ enum {
 };
 #define SMC_DBBIT(x)    (1 << SMC_DB_##x)
 //static int smc_dbflags = 0;
-static int smc_dbflags = SMC_DBBIT(TEST_SORT);
+static int smc_dbflags = SMC_DBBIT(SORT);
 
 #define SMC_LOG(what, fmt, ...) do { \
     if (smc_dbflags & SMC_DBBIT(what)) { \

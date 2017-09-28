@@ -1102,8 +1102,6 @@ static void smc_pml_ram_find_and_prefetch_block(void)
 
     block = QLIST_FIRST_RCU(&ram_list.blocks);
     offset = 0;
-    /* reset pml_unsort_prefetch_pages */
-    smc_pml_unsort_prefetch_pages_reset(&glo_smc_info);
 
     SMC_LOG(PML, "Start to find and insert prefetch pages into pml_prefetch_pages "
             "pml_prefetch_pages.nb_subsets=%d", 

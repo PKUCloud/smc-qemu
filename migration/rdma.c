@@ -5213,9 +5213,17 @@ static int smc_pml_do_prefetch_dirty_pages(RDMAContext *rdma, SMCInfo *smc_info,
             ++nb_ack;
         }
     }
-
-    SMC_LOG(SORT, "Fetched %d pages (But there are %d pages which should be fetched)",
-             nb_post, nb_eles);
+#ifdef DEBUG_SMC
+    if (nb_eles > smc_info->max_eles) {
+        smc_info->max_eles = subset->nb_eles;
+    }
+    if (nb_eles > 1000) {
+        smc_info->nb_more_than_1000++;
+    }
+#endif
+    SMC_LOG(SORT, "Fetched %d pages (But there are %d pages which should be fetched), \
+         max is %d, more than 1000 dirty pages for %d times.",
+             nb_post, nb_eles, smc_info->max_eles, smc_info->nb_more_than_1000);
     *complete_pages = nb_post;
     return signal;
 }

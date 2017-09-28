@@ -361,7 +361,7 @@ void smc_pml_sort_prefetch_pages(SMCInfo *smc_info)
 
     /* Declare temp variables used in the loop here.*/
     uint32_t i;
-    //uint16_t si;
+    uint16_t si;
     uint32_t fvisit = 0, svisit = 0;
     uint64_t block_offset1, block_offset2;
     uint64_t offset1, offset2;
@@ -441,10 +441,10 @@ void smc_pml_sort_prefetch_pages(SMCInfo *smc_info)
     *p_head_idx = temp.next;
 
     SMC_LOG(SORT, "There are %d dirty pages.", subset->nb_eles);
-    if (subset->nb_ele >= 1000) {
+    if (subset->nb_eles >= 1000) {
         SMC_LOG(SORT, "Emmmmm, it seems that there are too many dirty pages this round.");
     }
-    /*
+    
     si = *p_head_idx;
     i = 0;
     while (si != SMC_MAX_PREFETCH_OFFSET && i < subset->nb_eles) {
@@ -452,12 +452,12 @@ void smc_pml_sort_prefetch_pages(SMCInfo *smc_info)
         offset1 = pages[si].offset;
         total_dirty_times1 = smc_pml_total_prefetched_map_lookup(&glo_smc_info,
                                                                   block_offset1 + offset1);
-        SMC_LOG(SORT, "After sort, the %uth page is dirty for %u times, and points to %uth page.", 
+        SMC_LOG(TEST_SORT, "After sort, the %uth page is dirty for %u times, and points to %uth page.", 
                             si, total_dirty_times1, pages[si].next);
         si = pages[si].next;
         i++;
     }
-    */
+    
     
     
 }

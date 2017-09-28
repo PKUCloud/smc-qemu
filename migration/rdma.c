@@ -4268,7 +4268,7 @@ int smc_pml_recv_prefetch_info(void *opaque, SMCInfo *smc_info)
                                         req_data->control_curr, pages_to_save);
         nb_pages += pages_to_save;
         total_len -= head.len;
-        rount++;
+        round++;
     } while (total_len > 0);    
     req_data->control_len = 0;
     req_data->control_curr = req_data->control + sizeof(head);
@@ -5105,6 +5105,15 @@ static int smc_do_prefetch_dirty_pages(RDMAContext *rdma, SMCInfo *smc_info,
     return cmd;
 }
 
+static void *smc_rdma_superset_get_idex(SMCSuperSet *smc_superset, 
+                                        int idx)
+{
+    if (idx > smc_superset->cap || idx < 0) {
+        return NULL;
+    }
+    return smc_superset->subsets + idx * sizeof(SMCSet);
+}
+
 /* Prefetch as many as possible pages from the src.
  * @complete_pages: num of the actual prefetched pages;
  * return 0, nothing happened but prefetching pages;
@@ -5129,6 +5138,12 @@ static int smc_pml_do_prefetch_dirty_pages(RDMAContext *rdma, SMCInfo *smc_info,
     SMCSuperSet *superset;
     SMCPMLPrefetchPage *pages;
 
+    uint16_t si;
+    int i;
+    uint64_t block_offset1;
+    uint64_t offset1;
+    uint32_t total_dirty_times1;
+
     *complete_pages = 0;
     subset_idx = 0;
     superset_idx = smc_info->pml_prefetch_pages.nb_subsets;
@@ -5137,11 +5152,24 @@ static int smc_pml_do_prefetch_dirty_pages(RDMAContext *rdma, SMCInfo *smc_info,
     
     superset = &smc_info->pml_prefetch_pages;
     SMC_ASSERT(superset_idx <= superset->nb_subsets);
-    subset = (SMCSet *)smc_superset_get_idex(superset, superset_idx);
+    subset = (SMCSet *)smc_rdma_superset_get_idex(superset, superset_idx);
     pages = (SMCPMLPrefetchPage *)(subset->eles + 2);  
     /* Get head's index.*/        
     list_idx = *((uint16_t *)(subset->eles));
 
+    si = list_idx;
+    i = 0;
+    while (si != SMC_MAX_PREFETCH_OFFSET && i < nb_eles) {
+        block_offset1 = pages[si].block_offset;
+        offset1 = pages[si].offset;
+        total_dirty_times1 = smc_pml_total_prefetched_map_lookup(&glo_smc_info,
+                                                                  block_offset1 + offset1);
+        SMC_LOG(TEST_SORT, "After sort, the %uth page is dirty for %u times, and points to %uth page.", 
+                            si, total_dirty_times1, pages[si].next);
+        si = pages[si].next;
+        i++;
+    }
+    
     while (subset_idx < nb_eles) {
         prefetch_page = pages + list_idx;
         list_idx = prefetch_page->next;

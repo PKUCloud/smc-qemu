@@ -1133,9 +1133,9 @@ static void *mc_thread(void *opaque)
              */
             glo_smc_info.enable_incheckpoint_bitmap = true;
         }
-        if (!(s->checkpoints % SMC_PML_CLR_TOTAL_MAP_RDS)) {
+        if (!(s->checkpoints % SMC_PML_CLR_TOTAL_MAP_RDS) && !(s->checkpoints)) {
             smc_pml_total_prefetched_map_reset(&glo_smc_info);
-            SMC_LOG(SORT, "Clear the total dirty map every 1000 checkpoints.");
+            SMC_LOG(TEST_SORT, "Clear the total dirty map every 1000 checkpoints.");
         }
 #endif
         slab = mc_slab_start(&mc);
@@ -1431,10 +1431,10 @@ static void *mc_thread(void *opaque)
         if (end_time >= initial_time + 1000) {
             printf("[SMC]bytes %ld xmit_time %" PRId64 " downtime %" PRIu64
                    " ram_copy_time %" PRId64 " wait_time %" PRIu64
-                   " fetch_speed %d fetch_time %" PRId64
+                   " fetch_speed %d fetch_time %" PRId64 " total_time %" PRIu64 
                    " checkpoints %" PRId64 "\n",
                    s->bytes_xfer, s->xmit_time, s->downtime, s->ram_copy_time,
-                   wait_time, fetch_speed, fetch_time, s->checkpoints);
+                   wait_time, fetch_speed, fetch_time, s->total_time, s->checkpoints);
             initial_time = end_time;
         }
     }

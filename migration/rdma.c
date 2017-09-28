@@ -5138,12 +5138,14 @@ static int smc_pml_do_prefetch_dirty_pages(RDMAContext *rdma, SMCInfo *smc_info,
     SMCSuperSet *superset;
     SMCPMLPrefetchPage *pages;
 
+    /*
     uint16_t si;
     int i;
     uint64_t block_offset1;
     uint64_t offset1;
     uint32_t total_dirty_times1;
-
+    */
+    
     *complete_pages = 0;
     subset_idx = 0;
     superset_idx = smc_info->pml_prefetch_pages.nb_subsets;
@@ -5156,7 +5158,7 @@ static int smc_pml_do_prefetch_dirty_pages(RDMAContext *rdma, SMCInfo *smc_info,
     pages = (SMCPMLPrefetchPage *)(subset->eles + 2);  
     /* Get head's index.*/        
     list_idx = *((uint16_t *)(subset->eles));
-
+    /*
     si = list_idx;
     i = 0;
     while (si != SMC_MAX_PREFETCH_OFFSET && i < nb_eles) {
@@ -5169,7 +5171,7 @@ static int smc_pml_do_prefetch_dirty_pages(RDMAContext *rdma, SMCInfo *smc_info,
         si = pages[si].next;
         i++;
     }
-    
+    */
     while (subset_idx < nb_eles) {
         prefetch_page = pages + list_idx;
         list_idx = prefetch_page->next;

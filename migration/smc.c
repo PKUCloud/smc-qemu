@@ -20,8 +20,9 @@ static void smc_set_init(SMCSet *smc_set, int ele_size)
 {
     smc_set->cap = SMC_SET_INIT_CAP;
     smc_set->ele_size = ele_size;
-    //I am lazy.. Just allocate 4 more bytes for every SMCSet. I think it's OK 
-    //except wasting a little memory.
+    /* I am lazy.. Just allocate 2 more bytes for every SMCSet. I think it's OK 
+     * except wasting a little memory.
+     */
     smc_set->eles = (uint8_t *)g_malloc0(smc_set->cap * smc_set->ele_size + 2);
     smc_set->nb_eles = 0;
 }
@@ -165,7 +166,9 @@ static void smc_prefetch_set_resize(SMCSet *smc_set, int new_cap)
 
     SMC_ASSERT(new_cap > smc_set->cap);
     data = (uint8_t *)g_malloc0(new_cap * smc_set->ele_size);
-    //At this time we have not sort the linked list yet, so we remain the first 4 bytes 0.
+    /* At this time we have not sort the linked list yet, so we remain 
+     * the first 4 bytes 0.
+     */
     if (smc_set->nb_eles > 0) {
         memcpy(data + 2, (smc_set->eles) + 2, min(smc_set->nb_eles, new_cap) *
                smc_set->ele_size);
@@ -176,42 +179,6 @@ static void smc_prefetch_set_resize(SMCSet *smc_set, int new_cap)
     smc_set->nb_eles = min(smc_set->nb_eles, new_cap);
 }
 
-/*
-static void *smc_superset_insert(SMCSuperSet *smc_superset,
-                                    int subset_idx, const void *ele)
-{
-    SMCSet *subset;
-    uint8_t *new_ele;
-
-    subset = (SMCSet *)smc_superset_get_idex(smc_superset, subset_idx);
-                        //return smc_set_insert(subset, ele);
-
-    if (subset->cap == subset->nb_eles) {
-        smc_prefetch_set_resize(subset, subset->cap + SMC_SET_INIT_CAP);
-    }
-
-    new_ele = subset->eles + 2 + subset->nb_eles * subset->ele_size;
-    memcpy(new_ele, ele, subset->ele_size);
-    subset->nb_eles++;
-    ((SMCPMLPrefetchPage *)new_ele)->next = subset->nb_eles;
-    SMC_LOG(GEN, "after insert, there are %d pages in total", subset->nb_eles);
-
-    return new_ele;
-}
-*/
-
-//By put the insert logic to smc_pml_unsort_prefetch_pages_insert, we can keep smc_superset_insert 
-//not changed.
-
-static void *smc_superset_insert(SMCSuperSet *smc_superset,
-                                    int subset_idx, const void *ele)
-{
-    SMCSet *subset;
-
-    subset = (SMCSet *)smc_superset_get_idex(smc_superset, subset_idx);
-    return smc_set_insert(subset, ele);
-}
-
 static void *smc_set_get_idx(SMCSet *smc_set, int idx)
 {
     if (idx >= smc_set->nb_eles || idx < 0) {
@@ -219,7 +186,8 @@ static void *smc_set_get_idx(SMCSet *smc_set, int idx)
     }
     return smc_set->eles + idx * smc_set->ele_size;
 }
-//This function is used if different places, we cannot modify it.
+
+/* This function is used if different places, we cannot modify it.*/
 static void smc_set_insert_from_buf(SMCSet *smc_set, const void *buf,
                                     int nb_eles)
 {
@@ -253,11 +221,12 @@ static void smc_prefetch_set_insert_from_buf(SMCSet *smc_set, const void *buf,
     smc_set->nb_eles = nb_eles;
 }
 
-//This function is only used when the backup end receive prefetch info, so we 
-//directly modify it.
-//According to the functions that call smc_superset_insert_from_buf finally, 
-//here the subset is empty now, so something reflecting this feature will appear 
-//in smc_prefetch_set_insert_from_buf.
+/* This function is only used when the backup end receive prefetch info, so we 
+ * directly modify it.
+ * According to the functions that call smc_superset_insert_from_buf finally, 
+ * here the subset is empty now, so something reflecting this feature will appear 
+ * in smc_prefetch_set_insert_from_buf.
+ */
 static void smc_superset_insert_from_buf(SMCSuperSet *smc_superset,
                                     int subset_idx, const void *buf, int nb_eles)
 {
@@ -352,8 +321,6 @@ void smc_pml_unsort_prefetch_pages_insert(SMCInfo *smc_info,
     /*SMC_LOG(GEN, "add into pml_unsort_prefetch_pages which block_offset=%" PRIu64 
             " offset=%" PRIu64 " size=%" PRIu32 " in_checkpoint=%d subset_idx=%d", 
             block_offset, offset, size, in_checkpoint, subset_idx);*/
-    
-    //smc_superset_insert(&smc_info->pml_prefetch_pages, subset_idx, &page);
     SMCSet *subset;
     uint8_t *new_ele;
 
@@ -362,20 +329,24 @@ void smc_pml_unsort_prefetch_pages_insert(SMCInfo *smc_info,
     if (subset->cap == subset->nb_eles) {
         smc_prefetch_set_resize(subset, subset->cap + SMC_SET_INIT_CAP);
     }
-    SMC_LOG(SORT, "before insert, there are %d pages in total", subset->nb_eles);
+    //SMC_LOG(SORT, "before insert, there are %d pages in total", subset->nb_eles);
     new_ele = subset->eles + 2 + subset->nb_eles * subset->ele_size;
     subset->nb_eles++;
-    //Init the structure here, so we reduce some memory copy.
+    /* If we really prefetch 65535 pages, we cannot deal with them yet.*/
+    if (subset->nb_eles == SMC_MAX_PREFETCH_OFFSET) {
+        SMC_ERR("We prefetch too many dirty pages to deal with.");
+    }
+    /* Init the structure here, so we reduce some memory copy.*/
     ((SMCPMLPrefetchPage *)new_ele)->block_offset = block_offset;
     ((SMCPMLPrefetchPage *)new_ele)->offset = offset;
     ((SMCPMLPrefetchPage *)new_ele)->size = size;
-    //the next region stores next slot's index.
+    /* The next region stores next slot's index.*/
     ((SMCPMLPrefetchPage *)new_ele)->next = subset->nb_eles;
     ((SMCPMLPrefetchPage *)new_ele)->in_checkpoint = in_checkpoint;
-    SMC_LOG(SORT, "after insert, there are %d pages in total", subset->nb_eles);
+    /* SMC_LOG(SORT, "after insert, there are %d pages in total", subset->nb_eles);*/
 }
-//Use merge sort to sort the SMCPMLPrefetchPage array, but we regard it as a linked list.
 
+/* Use merge sort to sort the SMCPMLPrefetchPage array, but we regard it as a linked list.*/
 void smc_pml_sort_prefetch_pages(SMCInfo *smc_info)
 {
     SMCSet *subset;
@@ -388,34 +359,35 @@ void smc_pml_sort_prefetch_pages(SMCInfo *smc_info)
     SMCPMLPrefetchPage *pages;
     SMCPMLPrefetchPage *last_ele;
 
-    //Declare temp variables used in the loop here.
+    /* Declare temp variables used in the loop here.*/
     uint32_t i;
-    uint16_t si;
+    //uint16_t si;
     uint32_t fvisit = 0, svisit = 0;
     uint64_t block_offset1, block_offset2;
     uint64_t offset1, offset2;
     uint32_t total_dirty_times1, total_dirty_times2;
 
-    //temp is the Node right before list's head.
+    /* temp is the Node right before list's head.*/
     temp.next = 0;
 
     subset = (SMCSet *)smc_superset_get_idex(&(smc_info->pml_prefetch_pages), 
-                                                smc_info->pml_prefetch_pages.nb_subsets);
+                        smc_info->pml_prefetch_pages.nb_subsets);
 
-    //Make the last element's next region "points to NULL"
-    last_ele = (SMCPMLPrefetchPage *)(subset->eles + 2 + (subset->nb_eles - 1) * subset->ele_size);
+    /* Make the last element's next region "points to NULL"*/
+    last_ele = (SMCPMLPrefetchPage *)(subset->eles + 2 +
+                                     (subset->nb_eles - 1) * subset->ele_size);
     last_ele->next = SMC_MAX_PREFETCH_OFFSET;
     
     eles = subset->eles;
     p_head_idx = (uint16_t *)eles;
     pages = (SMCPMLPrefetchPage *)(eles + 2);
 
-    
+    /*    
     for (i = 0; i < subset->nb_eles; ++i) {
         SMC_LOG(SORT, "Before sort, the %uth page to prefetch points to %uth.", i, pages[i].next);
     }
-    
-    //Merge Sort begins.
+    */
+    /* Merge Sort begins.*/
     for (; interval <= subset->nb_eles; interval *= 2) {
         pre = &temp;
         first_idx = pre->next;
@@ -467,10 +439,14 @@ void smc_pml_sort_prefetch_pages(SMCInfo *smc_info)
         }
     }
     *p_head_idx = temp.next;
+
+    SMC_LOG(SORT, "There are %d dirty pages.", subset->nb_eles);
+    if (subset->nb_ele >= 1000) {
+        SMC_LOG(SORT, "Emmmmm, it seems that there are too many dirty pages this round.");
+    }
+    /*
     si = *p_head_idx;
     i = 0;
-    SMC_LOG(SORT, "Sort done");
-    
     while (si != SMC_MAX_PREFETCH_OFFSET && i < subset->nb_eles) {
         block_offset1 = pages[si].block_offset;
         offset1 = pages[si].offset;
@@ -481,6 +457,7 @@ void smc_pml_sort_prefetch_pages(SMCInfo *smc_info)
         si = pages[si].next;
         i++;
     }
+    */
     
     
 }
@@ -875,8 +852,7 @@ uint8_t *smc_pml_prefetch_pages_info(SMCInfo *smc_info)
     return subset->eles;
 }
 
-//Modify to suit for the lined-list subset->eles
-
+/* Modify to suit for the linked-list subset->eles*/
 SMCPMLPrefetchPage *smc_pml_prefetch_pages_get_idex(SMCInfo *smc_info,
                                              int superset_idx, int subset_idx)
 {
@@ -891,7 +867,8 @@ SMCPMLPrefetchPage *smc_pml_prefetch_pages_get_idex(SMCInfo *smc_info,
     SMC_ASSERT(subset_idx <= subset->nb_eles);
 
     pages = (SMCPMLPrefetchPage *)(subset->eles + 2);
-    cur_idx = *((uint16_t *)(subset->eles));//Get head's index.
+    /* Get head's index.*/
+    cur_idx = *((uint16_t *)(subset->eles));
 
     while(idx < subset_idx) {
         cur_idx = pages[cur_idx].next;
@@ -917,25 +894,30 @@ int smc_pml_persist_unprefetched_pages(SMCInfo *smc_info)
 {
     SMCSuperSet *superset = &(smc_info->pml_prefetch_pages);
     SMCSet *subset;
+    SMCPMLPrefetchPage *pages;
     int nb_round = superset->nb_subsets;
-    int round_idx;
-    int page_idx;
+    int superset_idx;
+    int subset_idx;
+    int16_t list_idx;
     SMCPMLPrefetchPage *unprefetched_page;
 
-    for (round_idx = 0; round_idx < nb_round; round_idx++) {
-        subset = (SMCSet *)smc_superset_get_idex(superset, round_idx);
-        page_idx = smc_info->pml_round_prefetch_info[round_idx].nb_pages;
+    for (superset_idx = 0; superset_idx < nb_round; superset_idx++) {
+        subset = (SMCSet *)smc_superset_get_idex(superset, superset_idx);
+        subset_idx = smc_info->pml_round_prefetch_info[superset_idx].nb_pages;
+        pages = (SMCPMLPrefetchPage *)(subset->eles + 2);  
+        /* Get head's index.*/      
+        list_idx = *((uint16_t *)(subset->eles));
         
         SMC_LOG(PML, "Round %d: should prefetch %d pages, but we prefetch %d"
-                " pages actually, remains %d pages", round_idx, subset->nb_eles,
-                page_idx, subset->nb_eles - page_idx);
+                " pages actually, remains %d pages", superset_idx, subset->nb_eles,
+                subset_idx, subset->nb_eles - subset_idx);
 
-        while (page_idx < subset->nb_eles) {
-            unprefetched_page = smc_pml_prefetch_pages_get_idex(smc_info,
-                                                        round_idx, page_idx);
+        while (subset_idx < subset->nb_eles) {
+            unprefetched_page = pages + list_idx;
+            list_idx = unprefetched_page->next;
             smc_pml_set_bitmap_through_offset(unprefetched_page->block_offset,
                                               unprefetched_page->offset);
-            ++page_idx;
+            ++subset_idx;
         }
     }
     return 0;

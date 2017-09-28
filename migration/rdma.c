@@ -4093,6 +4093,10 @@ int smc_pml_send_prefetch_info(void *opaque, SMCInfo *smc_info)
     int pages_to_send;
     int nb_subsets;
     int round = 0;
+    /* MAX_NB_PAGES = ((512 * 1024) - 16) / 24 = 21844, if we prefetch so many pages, 
+     * we are not able to sort them efficiently, but...SMC_NUM_DIRTY_PAGES_SEND is 
+     * 16351, kind of embarrassing.
+     */
     static const int MAX_NB_PAGES = (RDMA_CONTROL_MAX_BUFFER -
                                      sizeof(RDMAControlHeader)) /
                                     sizeof(SMCPMLPrefetchPage);
@@ -4120,6 +4124,11 @@ int smc_pml_send_prefetch_info(void *opaque, SMCInfo *smc_info)
         head.len = pages_to_send * sizeof(SMCPMLPrefetchPage);
         if (round == 0) {
             head.len += 2;
+        } else {
+            /* Now SMC_NUM_DIRTY_PAGES_SEND is less than MAX_NB_PAGES, so it is impossible
+             * that round is more than 0.
+             */
+            SMC_ERR("Too many dirty pages, %d remaining.", nb_pages);
         }
         SMC_ASSERT(head.len + sizeof(head) <= RDMA_CONTROL_MAX_BUFFER);
         /* TODO: We should translate the byte order before and after network
@@ -4133,10 +4142,32 @@ int smc_pml_send_prefetch_info(void *opaque, SMCInfo *smc_info)
         }
 
         nb_pages -= pages_to_send;
-        prefetch_pages += pages_to_send * sizeof(SMCPMLPrefetchPage);
-        //Now round should not increase, for we won't prefetch that many dirty pages.
+        prefetch_pages += head.len;
+        /* Now round should not increase, for we won't prefetch that many dirty pages.*/
         round++;
     } while (nb_pages);
+    return 0;
+}
+
+/* Send an empty prefetch info since there is no time to prefetch.
+ * Src will send a stop signal after calling this func.
+ */
+int smc_pml_send_empty_prefetch_info(void *opaque, SMCInfo *smc_info)
+{
+    QEMUFileRDMA *rfile = opaque;
+    RDMAContext *rdma = rfile->rdma;
+    int ret;
+    RDMAControlHeader head = { .type = SMC_PML_RDMA_CONTROL_PREFETCH_INFO,
+                               .repeat = 1 };
+    head.padding = 0;
+    head.len = 0;
+
+    ret = qemu_rdma_exchange_send(rdma, &head, NULL, NULL, NULL, NULL);
+    if (ret < 0) {
+        SMC_ERR("qemu_rdma_exchange_send() failed to send dirty pages info");
+        return ret;
+    }
+
     return 0;
 }
 
@@ -4201,6 +4232,7 @@ int smc_pml_recv_prefetch_info(void *opaque, SMCInfo *smc_info)
     RDMAWorkRequestData *req_data = &(rdma->wr_data[RDMA_WRID_READY]);
     int total_len = -1;
     int pages_to_save;
+    int round = 0;
 
     /* Post a Receive Request before recv the prefetch info to recv signals
      * after receiving the prefetch info.
@@ -4227,7 +4259,8 @@ int smc_pml_recv_prefetch_info(void *opaque, SMCInfo *smc_info)
                 break;
             }
         }
-        pages_to_save = (head.len - 2) / sizeof(SMCPMLPrefetchPage);
+        pages_to_save = ((round == 0) ? (head.len - 2) : head.len) 
+                                                / sizeof(SMCPMLPrefetchPage);
         /* TODO: We should translate the byte order before and after network
          * transfer.
          */
@@ -4235,6 +4268,7 @@ int smc_pml_recv_prefetch_info(void *opaque, SMCInfo *smc_info)
                                         req_data->control_curr, pages_to_save);
         nb_pages += pages_to_save;
         total_len -= head.len;
+        rount++;
     } while (total_len > 0);    
     req_data->control_len = 0;
     req_data->control_curr = req_data->control + sizeof(head);
@@ -5087,25 +5121,37 @@ static int smc_pml_do_prefetch_dirty_pages(RDMAContext *rdma, SMCInfo *smc_info,
     int ret;
     int signal = 0;
     int nb_post = 0;
-    int idx;
-    int nb_subsets;
+    int subset_idx;
+    int superset_idx;
     int nb_eles;
+    uint16_t list_idx;
+    SMCSet *subset;
+    SMCSuperSet *superset;
+    SMCPMLPrefetchPage *pages;
 
     *complete_pages = 0;
-    idx = 0;
-    nb_subsets = smc_info->pml_prefetch_pages.nb_subsets;
-    nb_eles = smc_pml_prefetch_pages_count(smc_info, nb_subsets);
+    subset_idx = 0;
+    superset_idx = smc_info->pml_prefetch_pages.nb_subsets;
+    nb_eles = smc_pml_prefetch_pages_count(smc_info, superset_idx);
     SMC_LOG(PML, "There are %d pages which should be fetched", nb_eles);
     
-    while (idx < nb_eles) {
-        prefetch_page = smc_pml_prefetch_pages_get_idex(smc_info, nb_subsets, idx);
+    superset = &smc_info->pml_prefetch_pages;
+    SMC_ASSERT(superset_idx <= superset->nb_subsets);
+    subset = (SMCSet *)smc_superset_get_idex(superset, superset_idx);
+    pages = (SMCPMLPrefetchPage *)(subset->eles + 2);  
+    /* Get head's index.*/        
+    list_idx = *((uint16_t *)(subset->eles));
+
+    while (subset_idx < nb_eles) {
+        prefetch_page = pages + list_idx;
+        list_idx = prefetch_page->next;
         SMC_ASSERT(prefetch_page);
-        ret = smc_pml_do_prefetch_page(rdma, smc_info, prefetch_page, idx);
+        ret = smc_pml_do_prefetch_page(rdma, smc_info, prefetch_page, subset_idx);
         if ( ret < 0 ) {
             return ret;
         }
         ++nb_post;
-        ++idx;
+        ++subset_idx;
 
         /* Wait here to see if there are any RDMA READ have completed */
         ret = smc_pml_try_ack_rdma_read(rdma, smc_info, false, &ack_idx);

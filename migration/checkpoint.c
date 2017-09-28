@@ -1051,6 +1051,8 @@ static void *mc_thread(void *opaque)
     uint64_t prefetch_round;
     int64_t capture_start_time;
     int64_t capture_end_time;
+    int64_t capture_time;
+    int64_t temp_xmit_time;
 
     smc_init(&glo_smc_info, f_opaque);
 
@@ -1130,6 +1132,10 @@ static void *mc_thread(void *opaque)
              * capturing this checkpoint.
              */
             glo_smc_info.enable_incheckpoint_bitmap = true;
+        }
+        if (!(s->checkpoints % SMC_PML_CLR_TOTAL_MAP_RDS)) {
+            smc_pml_total_prefetched_map_reset(&glo_smc_info);
+            SMC_LOG(SORT, "Clear the total dirty map every 1000 checkpoints.");
         }
 #endif
         slab = mc_slab_start(&mc);
@@ -1314,16 +1320,26 @@ static void *mc_thread(void *opaque)
 
 #if defined(SMC_PML_PREFETCH)
         prefetch_round = 0;
+        capture_time = 0;
         //TODO: remain_time = freq_ms - s->xmit_time, but we may get 0 remain time!
         remain_time = remain_time * 1000;
-        SMC_LOG(SORT, "--------------------------------"
+        SMC_LOG(SORT, "\n\n\n\n\n--------------------------------"
                 "We have %" PRIu64 " microseconds remains."
                 "--------------------------------", remain_time);
 
         while (true) {
             wait_time = smc_pml_calculate_xmit_sleep_time(&glo_smc_info, remain_time);
+            if (prefetch_round == 0) {
+                //s->xmit_time: ms; wait_time, remain_time: us.
+                temp_xmit_time  = s->xmit_time * 1000;
+                wait_time = (temp_xmit_time > wait_time) ? 0 : (wait_time - temp_xmit_time);
+                SMC_LOG(SORT, "Xmit_time: %ld, remain time: %ld, wait_time: %ld.", temp_xmit_time,
+                                remain_time, wait_time);
+            } else {
+                wait_time = (capture_time > wait_time) ? 0 : wait_time - capture_time;
+            }
             remain_time -= wait_time;
-            SMC_LOG(SORT, "===============================" 
+            SMC_LOG(SORT, "\n===============================" 
                     "let VM run %" PRIu64 " microseconds"
                     "==============================="
                     "remain_time = %" PRIu64,
@@ -1331,7 +1347,14 @@ static void *mc_thread(void *opaque)
             if (wait_time) {
                 g_usleep(wait_time);
             }
-            if (remain_time <= 0 && prefetch_round) {
+            if (remain_time <= 0) {
+                if (!prefetch_round) {
+                    /* Have no time to prefetch, so send an empty prefetch info first,
+                     * then send stop signal.
+                     */
+                    smc_pml_send_empty_prefetch_info(f_opaque, &glo_smc_info);
+                    smc_pml_prefetch_pages_next_subset(&glo_smc_info);
+                }
                 /* Prefetching done */
                 smc_pml_send_prefetch_signal(f_opaque, true);
                 ram_pml_clear_incheckpoint_bitmap();
@@ -1340,13 +1363,16 @@ static void *mc_thread(void *opaque)
             capture_start_time = qemu_clock_get_us(QEMU_CLOCK_REALTIME);
             smc_pml_capture_dirty_pages(&mc,s);
             capture_end_time = qemu_clock_get_us(QEMU_CLOCK_REALTIME);
-            SMC_LOG(SORT, "Capture and sort dirty pages takes %ld us.", capture_end_time - capture_start_time);
+            capture_time = capture_end_time - capture_start_time;
+            SMC_LOG(SORT, "Round %lu, capture and sort dirty pages takes %ld us.",
+                                 prefetch_round, capture_end_time - capture_start_time);
             if (prefetch_round > 0) {
                 smc_pml_send_prefetch_signal(f_opaque, false);
             } 
             smc_pml_send_prefetch_info(f_opaque, &glo_smc_info);
             smc_pml_prefetch_pages_next_subset(&glo_smc_info);
             ++prefetch_round;
+            remain_time = (remain_time < capture_time ) ? 0 : (remain_time - capture_time);
         }
 
         smc_pml_recv_round_prefetched_num(f_opaque, &glo_smc_info);

@@ -17,9 +17,9 @@
  */
 #define SMC_NUM_DIRTY_PAGES_SEND        16351
 #define SMC_MAX_PREFETCH_OFFSET         65535
-#define SMC_PML_PREFETCH_ROUND          35
+#define SMC_PML_PREFETCH_ROUND          10
 /* default checkpoint frequency */
-#define MC_DEFAULT_CHECKPOINT_FREQ_MS   50
+#define MC_DEFAULT_CHECKPOINT_FREQ_MS   5
 
 /* Info about a dirty page within a chunk */
 typedef struct SMCDirtyPage {
@@ -109,6 +109,10 @@ typedef struct SMCPMLRoundPrefetchInfo{
 
 #define SMC_PML_TOTAL_MAX_DIRTY_TIMES   1 << 31
 #define SMC_PML_MAX_SUBSET_IDX          10000
+/* We hope clear the glo_smc_info->pml_total_prefetched_map every 5000 ms,
+ * so SMC_PML_CLR_TOTAL_MAP_RDS should be 5000 / MC_DEFAULT_CHECKPOINT_FREQ_MS.
+ */
+#define SMC_PML_CLR_TOTAL_MAP_RDS       1000
 
 typedef struct SMCInfo {
     bool init;
@@ -176,6 +180,7 @@ void smc_prefetch_pages_insert_from_buf(SMCInfo *smc_info, const void *buf,
 int smc_send_dirty_info(void *opaque, SMCInfo *smc_info);
 int smc_pml_send_prefetch_signal(void *opaque, bool stop);
 int smc_pml_send_prefetch_info(void *opaque, SMCInfo *smc_info);
+int smc_pml_send_empty_prefetch_info(void *opaque, SMCInfo *smc_info);
 int smc_recv_dirty_info(void *opaque, SMCInfo *smc_info);
 int smc_pml_recv_prefetch_info(void *opaque, SMCInfo *smc_info);
 int smc_recv_prefetch_info(void *opaque, SMCInfo *smc_info,
@@ -259,6 +264,11 @@ static inline void smc_prefetch_map_reset(SMCInfo *smc_info)
 static inline void smc_pml_prefetched_map_reset(SMCInfo *smc_info)
 {
     g_hash_table_remove_all(smc_info->pml_prefetched_map);
+}
+
+static inline void smc_pml_total_prefetched_map_reset(SMCInfo *smc_info)
+{
+    g_hash_table_remove_all(smc_info->pml_total_prefetched_map);
 }
 
 static inline void smc_prefetch_map_insert(SMCInfo *smc_info, uint64_t phy_addr,

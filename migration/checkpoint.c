@@ -1127,6 +1127,8 @@ static void *mc_thread(void *opaque)
         glo_smc_info.early_flush_buffer = false;
         if (smc_is_init(&glo_smc_info)) {
             smc_pml_prefetch_pages_reset(&glo_smc_info);
+            SMC_LOG(CORE_DUMP, "\n\n\n\n         ~~~~~ After reset pml_prefetch_pages ~~~~~");
+            smc_debug_print_pml_prefetch_pages(&glo_smc_info);
             smc_pml_prefetched_map_reset(&glo_smc_info);
             /* need to clear smc_pml_incheckpoint_bitmap before 
              * capturing this checkpoint.

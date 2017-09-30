@@ -151,6 +151,8 @@ typedef struct SMCInfo {
 #endif
 } SMCInfo;
 
+void smc_debug_print_pml_prefetch_pages(SMCInfo *smc_info);
+
 extern SMCInfo glo_smc_info;
 
 void smc_init(SMCInfo *smc_info, void *opaque);

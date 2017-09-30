@@ -2,8 +2,8 @@
 #define _MIGRATION_SMC_DEBUG_H
 #include <stdio.h>
 
-#define DEBUG_SMC
-#define STAT_SMC
+//#define DEBUG_SMC
+//#define STAT_SMC
 
 extern FILE *smc_log_file;
 

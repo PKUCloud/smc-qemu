@@ -402,14 +402,24 @@ void smc_pml_sort_prefetch_pages(SMCInfo *smc_info)
     subset = (SMCSet *)smc_superset_get_idex(&(smc_info->pml_prefetch_pages), 
                                                 smc_info->pml_prefetch_pages.nb_subsets);
 
-    //Make the last element's next region "points to NULL"
-    last_ele = (SMCPMLPrefetchPage *)(subset->eles + 2 + (subset->nb_eles - 1) * subset->ele_size);
-    last_ele->next = SMC_MAX_PREFETCH_OFFSET;
-    
     eles = subset->eles;
     p_head_idx = (uint16_t *)eles;
     pages = (SMCPMLPrefetchPage *)(eles + 2);
 
+    /* bug fix: if there are no dirty pages, we donot need to sort.*/
+    if (subset->nb_eles == 0) {
+        *p_head_idx = SMC_MAX_PREFETCH_OFFSET;
+        return;
+    }
+
+    // /* Make the last element's next region "points to NULL"*/
+    last_ele = (SMCPMLPrefetchPage *)(subset->eles + 2 +
+                                     (subset->nb_eles - 1) * subset->ele_size);
+    last_ele->next = SMC_MAX_PREFETCH_OFFSET;
+    if (subset->nb_eles == 0)
+    {
+        printf("!!!!!!!!!!!!!!!!!!!!%d!!!!!!!!!!!!!\n", subset->nb_eles - 1);
+    }
     
     for (i = 0; i < subset->nb_eles; ++i) {
         SMC_LOG(SORT, "Before sort, the %uth page to prefetch points to %uth.", i, pages[i].next);

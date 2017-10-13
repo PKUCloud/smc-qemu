@@ -4125,6 +4125,29 @@ int smc_pml_send_prefetch_info(void *opaque, SMCInfo *smc_info)
     return 0;
 }
 
+
+/* Send an empty prefetch info since there is no time to prefetch. 
+ * Src will send a stop signal after calling this func.
+ */
+int smc_pml_send_empty_prefetch_info(void *opaque, SMCInfo *smc_info)
+{
+    QEMUFileRDMA *rfile = opaque;
+    RDMAContext *rdma = rfile->rdma;
+    int ret;
+    RDMAControlHeader head = { .type = SMC_PML_RDMA_CONTROL_PREFETCH_INFO,
+                               .repeat = 1 };
+    head.padding = 0;
+    head.len = 0;
+    
+    ret = qemu_rdma_exchange_send(rdma, &head, NULL, NULL, NULL, NULL);
+    if (ret < 0) {
+        SMC_ERR("qemu_rdma_exchange_send() failed to send dirty pages info");
+        return ret;
+    }
+
+    return 0;
+}
+
 int smc_recv_dirty_info(void *opaque, SMCInfo *smc_info)
 {
     QEMUFileRDMA *rfile = opaque;

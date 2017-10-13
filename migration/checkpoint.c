@@ -1049,6 +1049,10 @@ static void *mc_thread(void *opaque)
     bool blk_enabled = false;
     int64_t fetch_time;
     uint64_t prefetch_round;
+    int64_t capture_start_time;
+    int64_t capture_end_time;
+    int64_t capture_time;
+    int64_t temp_xmit_time;
 
     smc_init(&glo_smc_info, f_opaque);
 
@@ -1312,6 +1316,7 @@ static void *mc_thread(void *opaque)
 
 #if defined(SMC_PML_PREFETCH)
         prefetch_round = 0;
+        capture_time = 0;
         //TODO: remain_time = freq_ms - s->xmit_time, but we may get 0 remain time!
         remain_time = remain_time * 1000;
         SMC_LOG(PML, "--------------------------------"
@@ -1320,6 +1325,13 @@ static void *mc_thread(void *opaque)
 
         while (true) {
             wait_time = smc_pml_calculate_xmit_sleep_time(&glo_smc_info, remain_time);
+            if (prefetch_round == 0) {
+                //s->xmit_time: ms; wait_time, remain_time: us.
+                temp_xmit_time  = s->xmit_time * 1000;
+                wait_time = (temp_xmit_time > wait_time) ? 0 : (wait_time - temp_xmit_time);
+            } else {
+                wait_time = (capture_time > wait_time) ? 0 : wait_time - capture_time;
+            }
             remain_time -= wait_time;
             SMC_LOG(PML, "===============================" 
                     "let VM run %" PRIu64 " microseconds"
@@ -1329,19 +1341,31 @@ static void *mc_thread(void *opaque)
             if (wait_time) {
                 g_usleep(wait_time);
             }
-            if (remain_time <= 0 && prefetch_round) {
+            if (remain_time <= 0) {
+                if (!prefetch_round) {
+                    /* Have no time to prefetch, so send an empty prefetch info first,
+                     * then send stop signal.
+                     */
+                    smc_pml_send_empty_prefetch_info(f_opaque, &glo_smc_info);
+                    smc_pml_prefetch_pages_next_subset(&glo_smc_info);
+                }
                 /* Prefetching done */
                 smc_pml_send_prefetch_signal(f_opaque, true);
                 ram_pml_clear_incheckpoint_bitmap();
                 break;
             }
+            capture_start_time = qemu_clock_get_us(QEMU_CLOCK_REALTIME);
             smc_pml_capture_dirty_pages(&mc,s);
             if (prefetch_round > 0) {
                 smc_pml_send_prefetch_signal(f_opaque, false);
             } 
+            capture_end_time = qemu_clock_get_us(QEMU_CLOCK_REALTIME);
+            capture_time = capture_end_time - capture_start_time;
+            
             smc_pml_send_prefetch_info(f_opaque, &glo_smc_info);
             smc_pml_prefetch_pages_next_subset(&glo_smc_info);
             ++prefetch_round;
+            remain_time = (remain_time < capture_time ) ? 0 : (remain_time - capture_time);
         }
 
         smc_pml_recv_round_prefetched_num(f_opaque, &glo_smc_info);

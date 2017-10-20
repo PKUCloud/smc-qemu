@@ -245,6 +245,67 @@ static unsigned long *smc_pml_prefetch_bitmap;
 static uint64_t smc_pml_prefetch_pages;
 static unsigned long *smc_pml_incheckpoint_bitmap;
 
+#ifdef DEBUG_SMC
+enum {
+    NO_SET_BIT_PRINTED,
+    SET_BIT_PRINTED,
+};
+static int64_t map_size;
+// static void local_print_bitmap_setbit_to_log(void)
+// {
+//     rcu_read_lock();
+
+//     // unsigned long *temp_bitmap;
+//     // temp_bitmap = bitmap_new(map_size);
+//     // bitmap_copy(temp_bitmap, migration_bitmap, map_size);
+//     // SMC_LOG(DEL, "~~~ NOW BEGIN TO PRINT SET_BIT(S) ~~~\n");
+//     // int i = 0;
+//     // for (; i < BITS_TO_LONGS(map_size); ++i) {//BITS_TO_LONGS(map_size)
+//     //     SMC_LOG(DEL, "%dth map_slice is %lX", i, temp_bitmap[i]);
+//     // }
+//     // SMC_LOG(DEL, "~~~ ALL SET_BIT(S) PRINTED ~~~\n\n");
+
+
+//     /* map_size is the actual number of legal bits in the bit map
+//      * the memsize of migration_bitmap is 
+//      * DIV_ROUND_UP(map_size, BITS_PER_BYTE * sizeof(long)) * sizeof(unsigned long)
+//      */
+//     unsigned long *temp_bitmap;
+//     temp_bitmap = bitmap_new(map_size);
+//     unsigned long next = 0;
+//     int flag = NO_SET_BIT_PRINTED;
+//     long len = BITS_TO_LONGS(map_size) * 64;
+//     bitmap_copy(temp_bitmap, migration_bitmap, len);
+//     SMC_LOG(DEL, "~~~ NOW BEGIN TO PRINT SET_BIT(S) ~~~\n");
+//     while (next < map_size) {
+//         next = find_next_bit(temp_bitmap, len, next);
+        
+//         if (next <= map_size && test_and_clear_bit(next, temp_bitmap)) {
+//             if (next < 528592 || next > 529071) {
+//                 flag = SET_BIT_PRINTED;
+//                 SMC_LOG(DEL, "the %luth bit is set.", next);
+//             }
+            
+//         }
+        
+//     }
+//     if (flag == NO_SET_BIT_PRINTED) {
+//         SMC_LOG(DEL, "There are no set bit yet.");
+//     }
+//     SMC_LOG(DEL, "~~~ ALL SET_BIT(S) PRINTED ~~~\n\n");
+//     if (temp_bitmap) {
+//         g_free(temp_bitmap);
+//     }
+//     rcu_read_unlock();
+
+// }
+#endif
+
+
+// static void local_print_bitmap_setbit_to_log()
+// {
+
+// }
 struct CompressParam {
     bool start;
     bool done;
@@ -540,6 +601,7 @@ ram_addr_t migration_bitmap_find_and_reset_dirty(MemoryRegion *mr,
 #endif            
         migration_dirty_pages--;
     }
+
     return (next - base) << TARGET_PAGE_BITS;
 }
 
@@ -1148,7 +1210,31 @@ void smc_pml_set_bitmap_through_offset(uint64_t block_offset,
                          (offset >> TARGET_PAGE_BITS);
     if (!test_and_set_bit(nr, migration_bitmap)) {
         migration_dirty_pages++;
+        // SMC_LOG(DEL, "Unprefetch page %lu, need transfer %lu pages in checkpoint.",
+        //             nr, migration_dirty_pages);
+        
+        // SMC_LOG(DEL, "here");
+        // local_print_bitmap_setbit_to_log();
     }
+
+
+}
+
+/* Clear the corresponding bit in migration_bitmap through the page offset */
+void smc_pml_clear_bitmap_through_offset(uint64_t block_offset,
+                                                    uint64_t offset)
+{
+    unsigned long nr = (block_offset >> TARGET_PAGE_BITS) +
+                         (offset >> TARGET_PAGE_BITS);
+    if (test_and_clear_bit(nr, migration_bitmap)) {
+        migration_dirty_pages--;
+        // SMC_LOG(DEL, "Prefetch page %lu, need transfer %lu pages in checkpoint(discard that page).",
+        //             nr, migration_dirty_pages);
+        // SMC_LOG(DEL, "here");
+        // local_print_bitmap_setbit_to_log();
+    }
+
+    
 }
 
 /* Called with iothread lock held, to protect ram_list.dirty_memory[] */
@@ -1340,6 +1426,16 @@ static int ram_save_setup(QEMUFile *f, void *opaque)
     migration_bitmap = bitmap_new(ram_bitmap_pages);
     bitmap_set(migration_bitmap, 0, ram_bitmap_pages);
 
+    // for debug 
+    map_size = ram_bitmap_pages;
+    SMC_LOG(DEL, "bitmap inited, size is %ld, actually %ld unsigned long int, %lu dirty pages",
+                        map_size, BITS_TO_LONGS(map_size), migration_dirty_pages);
+    // local_print_bitmap_setbit_to_log();
+    // for (int i = 0; i < 100; ++i) {//BITS_TO_LONGS(map_size)
+    //     SMC_LOG(DEL, "%dth map_slice is %lX", i, migration_bitmap[i]);
+    // }
+    // for debug
+
 #ifdef SMC_PML_PREFETCH
     //init PML prefetch bitmap: init an empty bitmap:
     smc_pml_prefetch_bitmap = bitmap_new(ram_bitmap_pages);
@@ -1440,6 +1536,12 @@ static int ram_save_iterate(QEMUFile *f, void *opaque)
     flush_compressed_data(f);
     rcu_read_unlock();
 
+    // if (smc_is_init(&glo_smc_info)) {
+    //     SMC_LOG(DEL, "here");
+    //     local_print_bitmap_setbit_to_log();
+    // }
+    
+
     /*
      * Must occur before EOS (or any QEMUFile operation)
      * because of RDMA protocol.
@@ -1502,6 +1604,11 @@ static int ram_save_complete(QEMUFile *f, void *opaque)
 
     rcu_read_unlock();
     qemu_put_be64(f, RAM_SAVE_FLAG_EOS);
+
+    // if (smc_is_init(&glo_smc_info)) {
+    //     SMC_LOG(DEL, "here");
+    //     local_print_bitmap_setbit_to_log();
+    // }
 
     return 0;
 }

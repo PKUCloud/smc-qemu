@@ -20,7 +20,7 @@
  * which can be found by using $ ibv_devinfo -v
  */
 #define SMC_NUM_DIRTY_PAGES_SEND        16351
-#define SMC_PML_PREFETCH_ROUND          10
+#define SMC_PML_PREFETCH_ROUND          5
 /* default checkpoint frequency */
 #define MC_DEFAULT_CHECKPOINT_FREQ_MS   5
 
@@ -140,6 +140,17 @@ typedef struct SMCInfo {
     /* dirty page transmission speed (pages per millisecond) */
     double pml_xmit_speed;
     bool early_flush_buffer;
+
+#ifdef DEBUG_SMC
+    double stat_one_round_rate;
+    double stat_all_round_rate;
+    double stat_90p_round_rate;
+    double stat_80p_round_rate;
+    double stat_70p_round_rate;
+    double stat_60p_round_rate;
+    double stat_50p_round_rate;
+    long stat_calc_times;
+#endif
 } SMCInfo;
 
 extern SMCInfo glo_smc_info;
@@ -219,6 +230,8 @@ SMCPMLPrefetchPage *smc_pml_prefetch_pages_get_idex(SMCInfo *smc_info,
 int smc_pml_prefetch_pages_count(SMCInfo *smc_info, int superset_idx);
 int smc_pml_persist_unprefetched_pages(SMCInfo *smc_info);
 void smc_pml_set_bitmap_through_offset(uint64_t block_offset,
+                                                    uint64_t offset);
+void smc_pml_clear_bitmap_through_offset(uint64_t block_offset,
                                                     uint64_t offset);
 uint64_t smc_pml_calculate_xmit_sleep_time(SMCInfo *smc_info, 
                                                        uint64_t remain_time);

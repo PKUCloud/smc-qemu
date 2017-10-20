@@ -1706,6 +1706,7 @@ void mc_process_incoming_checkpoints_if_requested(QEMUFile *f)
             smc_pml_prefetch_pages_reset(&glo_smc_info);
             smc_pml_backup_pages_reset(&glo_smc_info);
             smc_pml_prefetched_map_reset(&glo_smc_info);
+            SMC_LOG(DEL, "~~~ Slave begin prefetch ~~~");
             while (true) {
                 nb_recv_prefetch_pages = smc_pml_recv_prefetch_info(f_opaque,
                                                                 &glo_smc_info);
@@ -1727,6 +1728,8 @@ void mc_process_incoming_checkpoints_if_requested(QEMUFile *f)
                 smc_set_state(&glo_smc_info, SMC_STATE_PREFETCH_DONE);
                 smc_pml_prefetch_pages_next_subset(&glo_smc_info);
             }
+            SMC_LOG(DEL, "~~~ Slave prefetch done ~~~");
+            
             for (int i = 0; i <= glo_smc_info.pml_prefetch_pages.nb_subsets; i++) {
                     SMC_LOG(PML, "pml_round_prefetch_info[%d]: nb_pages=%" PRIu64
                             " prefetch_time=%" PRIu64, i, 
@@ -2160,6 +2163,21 @@ void smc_print_stat(void)
                s->checkpoints);
     }
     printf("[SMC]Max prefetch speed (pages/ms): %d\n", s->fetch_speed);
+    printf("[SMC]One_round_rate is %lf\n", 
+            glo_smc_info.stat_one_round_rate / glo_smc_info.stat_calc_times);
+    printf("[SMC]All_round_rate is %lf\n", 
+            glo_smc_info.stat_all_round_rate / glo_smc_info.stat_calc_times);
+    printf("[SMC]90%%_round_rate is %lf\n", 
+            glo_smc_info.stat_90p_round_rate / glo_smc_info.stat_calc_times);
+    printf("[SMC]80%%_round_rate is %lf\n", 
+            glo_smc_info.stat_80p_round_rate / glo_smc_info.stat_calc_times);
+    printf("[SMC]70%%_round_rate is %lf\n", 
+            glo_smc_info.stat_70p_round_rate / glo_smc_info.stat_calc_times);
+    printf("[SMC]60%%_round_rate is %lf\n", 
+            glo_smc_info.stat_60p_round_rate / glo_smc_info.stat_calc_times);
+    printf("[SMC]50%%_round_rate is %lf\n", 
+            glo_smc_info.stat_50p_round_rate / glo_smc_info.stat_calc_times);
+
 
     fflush(smc_log_file);
 }

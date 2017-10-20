@@ -5001,6 +5001,8 @@ static int smc_pml_do_prefetch_page(RDMAContext *rdma, SMCInfo *smc_info,
     smc_pml_prefetched_map_insert(smc_info, page->block_offset + page->offset, 
                                   nb_page_fetched);
     ret = smc_rdma_read(rdma, block, page->offset, page->size, page_idx, NO_NEED_SEND_SIGNAL);
+    SMC_LOG(DEL, "Slave prefetch page %lu", 
+                    (page->block_offset >> 12) + (page->offset >> 12));
     return ret;
 }
 

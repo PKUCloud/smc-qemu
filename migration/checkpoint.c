@@ -2163,20 +2163,22 @@ void smc_print_stat(void)
                s->checkpoints);
     }
     printf("[SMC]Max prefetch speed (pages/ms): %d\n", s->fetch_speed);
-    printf("[SMC]One_round_rate is %lf\n", 
-            glo_smc_info.stat_one_round_rate / glo_smc_info.stat_calc_times);
-    printf("[SMC]All_round_rate is %lf\n", 
-            glo_smc_info.stat_all_round_rate / glo_smc_info.stat_calc_times);
-    printf("[SMC]90%%_round_rate is %lf\n", 
-            glo_smc_info.stat_90p_round_rate / glo_smc_info.stat_calc_times);
-    printf("[SMC]80%%_round_rate is %lf\n", 
-            glo_smc_info.stat_80p_round_rate / glo_smc_info.stat_calc_times);
-    printf("[SMC]70%%_round_rate is %lf\n", 
-            glo_smc_info.stat_70p_round_rate / glo_smc_info.stat_calc_times);
-    printf("[SMC]60%%_round_rate is %lf\n", 
-            glo_smc_info.stat_60p_round_rate / glo_smc_info.stat_calc_times);
-    printf("[SMC]50%%_round_rate is %lf\n", 
-            glo_smc_info.stat_50p_round_rate / glo_smc_info.stat_calc_times);
+    // for dirty frequency statistics
+    // printf("[SMC]One_round_rate is %lf\n", 
+    //         glo_smc_info.stat_one_round_rate / glo_smc_info.stat_calc_times);
+    // printf("[SMC]All_round_rate is %lf\n", 
+    //         glo_smc_info.stat_all_round_rate / glo_smc_info.stat_calc_times);
+    // printf("[SMC]90%%_round_rate is %lf\n", 
+    //         glo_smc_info.stat_90p_round_rate / glo_smc_info.stat_calc_times);
+    // printf("[SMC]80%%_round_rate is %lf\n", 
+    //         glo_smc_info.stat_80p_round_rate / glo_smc_info.stat_calc_times);
+    // printf("[SMC]70%%_round_rate is %lf\n", 
+    //         glo_smc_info.stat_70p_round_rate / glo_smc_info.stat_calc_times);
+    // printf("[SMC]60%%_round_rate is %lf\n", 
+    //         glo_smc_info.stat_60p_round_rate / glo_smc_info.stat_calc_times);
+    // printf("[SMC]50%%_round_rate is %lf\n", 
+    //         glo_smc_info.stat_50p_round_rate / glo_smc_info.stat_calc_times);
+    // for dirty frequency statistics
 
 
     fflush(smc_log_file);

@@ -223,12 +223,12 @@ void smc_init(SMCInfo *smc_info, void *opaque)
     //smc_info->need_clear_incheckpoint_bitmap = false;
 
     // for calc dirty pages decrease
-    smc_info->stat_nb_unprefetched_pages = 0;
-    smc_info->stat_nb_unprefetched_pages_when_do_prefetch = 0;
-    smc_info->stat_nb_prefetched_pages = 0;
-    smc_info->stat_dirty_decrease_rate = 0.0; 
-    smc_info->prefetch_bitmap = bitmap_new(529074); 
-    smc_info->not_to_prefetch_flag = 0;
+    // smc_info->stat_nb_unprefetched_pages = 0;
+    // smc_info->stat_nb_unprefetched_pages_when_do_prefetch = 0;
+    // smc_info->stat_nb_prefetched_pages = 0;
+    // smc_info->stat_dirty_decrease_rate = 0.0; 
+    // smc_info->prefetch_bitmap = bitmap_new(529074); 
+    // smc_info->not_to_prefetch_flag = 0;
     // for calc dirty pages decrease
 }
 
@@ -256,9 +256,9 @@ void smc_exit(SMCInfo *smc_info)
     //smc_info->need_clear_incheckpoint_bitmap = false;
 
     // for calc dirty pages decrease
-    if (smc_info->prefetch_bitmap) {
-        g_free(smc_info->prefetch_bitmap);
-    }
+    // if (smc_info->prefetch_bitmap) {
+    //     g_free(smc_info->prefetch_bitmap);
+    // }
     // for calc dirty pages decrease
 }
 
@@ -752,8 +752,8 @@ int smc_pml_persist_unprefetched_pages(SMCInfo *smc_info)
     SMCPMLPrefetchPage *prefetched_page;
 
     // for calc dirty pages decrease
-    bitmap_clear(smc_info->prefetch_bitmap, 0, 529074);
-    unsigned long nr;
+    // bitmap_clear(smc_info->prefetch_bitmap, 0, 529074);
+    // unsigned long nr;
     // for calc dirty pages decrease
 
 
@@ -775,10 +775,10 @@ int smc_pml_persist_unprefetched_pages(SMCInfo *smc_info)
             ++cnt;
 
             // for calc dirty pages decrease
-            nr = (prefetched_page->block_offset >> 12) +
-                         (prefetched_page->offset >> 12);
-            set_bit(nr, smc_info->prefetch_bitmap);
-            // for calc dirty pages decrease
+            // nr = (prefetched_page->block_offset >> 12) +
+            //              (prefetched_page->offset >> 12);
+            // set_bit(nr, smc_info->prefetch_bitmap);
+            // // for calc dirty pages decrease
         }
 
         while (page_idx < subset->nb_eles) {
@@ -789,9 +789,9 @@ int smc_pml_persist_unprefetched_pages(SMCInfo *smc_info)
             ++page_idx;
 
             // for calc dirty pages decrease
-            nr = (unprefetched_page->block_offset >> 12) +
-                         (unprefetched_page->offset >> 12);
-            clear_bit(nr, smc_info->prefetch_bitmap);
+            // nr = (unprefetched_page->block_offset >> 12) +
+            //              (unprefetched_page->offset >> 12);
+            // clear_bit(nr, smc_info->prefetch_bitmap);
             // for calc dirty pages decrease
      }
     }

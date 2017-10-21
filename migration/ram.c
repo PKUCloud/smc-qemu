@@ -1427,9 +1427,9 @@ static int ram_save_setup(QEMUFile *f, void *opaque)
     bitmap_set(migration_bitmap, 0, ram_bitmap_pages);
 
     // for debug 
-    map_size = ram_bitmap_pages;
-    SMC_LOG(DEL, "bitmap inited, size is %ld, actually %ld unsigned long int, %lu dirty pages",
-                        map_size, BITS_TO_LONGS(map_size), migration_dirty_pages);
+    // map_size = ram_bitmap_pages;
+    // SMC_LOG(DEL, "bitmap inited, size is %ld, actually %ld unsigned long int, %lu dirty pages",
+    //                     map_size, BITS_TO_LONGS(map_size), migration_dirty_pages);
     // local_print_bitmap_setbit_to_log();
     // for (int i = 0; i < 100; ++i) {//BITS_TO_LONGS(map_size)
     //     SMC_LOG(DEL, "%dth map_slice is %lX", i, migration_bitmap[i]);
@@ -1578,36 +1578,36 @@ static int ram_save_complete(QEMUFile *f, void *opaque)
     ram_control_before_iterate(f, RAM_CONTROL_FINISH);
 
     // for calc dirty pages decrease
-    if (smc_is_init(&glo_smc_info)) {
-        uint64_t tmp_stat_nb_prefetched_pages = 0;
-        unsigned long *tmp_bitmap = bitmap_new(529074);
-        bitmap_and(tmp_bitmap, glo_smc_info.prefetch_bitmap, migration_bitmap, 529074);
-        bitmap_xor(glo_smc_info.prefetch_bitmap, glo_smc_info.prefetch_bitmap, tmp_bitmap, 529074);
-        unsigned long next = 0;
-        while (next < 529074) {
-            next = find_next_bit(glo_smc_info.prefetch_bitmap, 8267 * 64, next);
-            if (next <= 529074 && test_and_clear_bit(next, glo_smc_info.prefetch_bitmap)) {
-                glo_smc_info.stat_nb_prefetched_pages++;
-                tmp_stat_nb_prefetched_pages++;
-            }
-        }
-        glo_smc_info.stat_nb_unprefetched_pages += migration_dirty_pages;
-        if (!glo_smc_info.not_to_prefetch_flag) {
-            glo_smc_info.stat_nb_unprefetched_pages_when_do_prefetch += migration_dirty_pages;
-        }
+    // if (smc_is_init(&glo_smc_info)) {
+    //     uint64_t tmp_stat_nb_prefetched_pages = 0;
+    //     unsigned long *tmp_bitmap = bitmap_new(529074);
+    //     bitmap_and(tmp_bitmap, glo_smc_info.prefetch_bitmap, migration_bitmap, 529074);
+    //     bitmap_xor(glo_smc_info.prefetch_bitmap, glo_smc_info.prefetch_bitmap, tmp_bitmap, 529074);
+    //     unsigned long next = 0;
+    //     while (next < 529074) {
+    //         next = find_next_bit(glo_smc_info.prefetch_bitmap, 8267 * 64, next);
+    //         if (next <= 529074 && test_and_clear_bit(next, glo_smc_info.prefetch_bitmap)) {
+    //             glo_smc_info.stat_nb_prefetched_pages++;
+    //             tmp_stat_nb_prefetched_pages++;
+    //         }
+    //     }
+    //     glo_smc_info.stat_nb_unprefetched_pages += migration_dirty_pages;
+    //     if (!glo_smc_info.not_to_prefetch_flag) {
+    //         glo_smc_info.stat_nb_unprefetched_pages_when_do_prefetch += migration_dirty_pages;
+    //     }
 
-        if (glo_smc_info.not_to_prefetch_flag) {
-            SMC_LOG(STATISTIC, "");
-        }
-        SMC_LOG(STATISTIC, "prefetch %lu pages, unprefetch %lu pages.",
-                    tmp_stat_nb_prefetched_pages, migration_dirty_pages);
-        if (glo_smc_info.not_to_prefetch_flag) {
-            SMC_LOG(STATISTIC, "donot prefetch this epoch\n");
-        }
-        if (tmp_bitmap) {
-            g_free(tmp_bitmap);
-        }
-    }
+    //     if (glo_smc_info.not_to_prefetch_flag) {
+    //         SMC_LOG(STATISTIC, "");
+    //     }
+    //     SMC_LOG(STATISTIC, "prefetch %lu pages, unprefetch %lu pages.",
+    //                 tmp_stat_nb_prefetched_pages, migration_dirty_pages);
+    //     if (glo_smc_info.not_to_prefetch_flag) {
+    //         SMC_LOG(STATISTIC, "donot prefetch this epoch\n");
+    //     }
+    //     if (tmp_bitmap) {
+    //         g_free(tmp_bitmap);
+    //     }
+    // }
     // for calc dirty pages decrease
 
     /* try transferring iterative blocks of memory */

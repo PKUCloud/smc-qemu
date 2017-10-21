@@ -222,11 +222,14 @@ void smc_init(SMCInfo *smc_info, void *opaque)
     smc_info->enable_incheckpoint_bitmap = false;
     //smc_info->need_clear_incheckpoint_bitmap = false;
 
-// for dirty frequency statistics
-    // smc_info->stat_one_round_rate = 0.0;
-    // smc_info->stat_all_round_rate = 0.0;
-    // smc_info->stat_calc_times = 0;
-// for dirty frequency statistics
+    // for calc dirty pages decrease
+    smc_info->stat_nb_unprefetched_pages = 0;
+    smc_info->stat_nb_unprefetched_pages_when_do_prefetch = 0;
+    smc_info->stat_nb_prefetched_pages = 0;
+    smc_info->stat_dirty_decrease_rate = 0.0; 
+    smc_info->prefetch_bitmap = bitmap_new(529074); 
+    smc_info->not_to_prefetch_flag = 0;
+    // for calc dirty pages decrease
 }
 
 void smc_exit(SMCInfo *smc_info)
@@ -251,6 +254,12 @@ void smc_exit(SMCInfo *smc_info)
     smc_info->init = false;
     smc_info->enable_incheckpoint_bitmap = false;
     //smc_info->need_clear_incheckpoint_bitmap = false;
+
+    // for calc dirty pages decrease
+    if (smc_info->prefetch_bitmap) {
+        g_free(smc_info->prefetch_bitmap);
+    }
+    // for calc dirty pages decrease
 }
 
 void smc_dirty_pages_insert(SMCInfo *smc_info, uint64_t block_offset,
@@ -742,29 +751,11 @@ int smc_pml_persist_unprefetched_pages(SMCInfo *smc_info)
     SMCPMLPrefetchPage *unprefetched_page;
     SMCPMLPrefetchPage *prefetched_page;
 
+    // for calc dirty pages decrease
+    bitmap_clear(smc_info->prefetch_bitmap, 0, 529074);
+    unsigned long nr;
+    // for calc dirty pages decrease
 
-    // for dirty frequency statistics
-    // GHashTable *dirty_map = g_hash_table_new(g_direct_hash, g_direct_equal);
-    // uint64_t phy_addr;
-    // gpointer key;
-    // gpointer value;
-    // uint32_t nb_dirty_times;
-    // double stat_nb_all_dirty_pages = 0.0;
-    // double stat_nb_one_round = 0.0;
-    // double stat_nb_all_round = 0.0;
-    // double stat_nb_90p_round = 0.0;
-    // double stat_nb_80p_round = 0.0;
-    // double stat_nb_70p_round = 0.0;
-    // double stat_nb_60p_round = 0.0;
-    // double stat_nb_50p_round = 0.0;
-    // double stat_one_round_rate;
-    // double stat_all_round_rate;
-    // double stat_90p_round_rate;
-    // double stat_80p_round_rate;
-    // double stat_70p_round_rate;
-    // double stat_60p_round_rate;
-    // double stat_50p_round_rate;
-    // for dirty frequency statistics
 
     for (round_idx = 0; round_idx < nb_round; round_idx++) {
         subset = (SMCSet *)smc_superset_get_idex(superset, round_idx);
@@ -783,21 +774,11 @@ int smc_pml_persist_unprefetched_pages(SMCInfo *smc_info)
                                               prefetched_page->offset);
             ++cnt;
 
-
-            // for dirty frequency statistics
-            // phy_addr = prefetched_page->block_offset + prefetched_page->offset;
-            // key = (void *)(uintptr_t)phy_addr;
-            // value = g_hash_table_lookup(dirty_map,
-            //                 (void *)(uintptr_t)phy_addr);
-            // if (value == NULL) {
-            //     g_hash_table_insert(dirty_map, key, GUINT_TO_POINTER(1));
-            // } else {
-            //     nb_dirty_times = GPOINTER_TO_UINT(value);
-            //     nb_dirty_times++;
-            //     value = GUINT_TO_POINTER(nb_dirty_times);
-            //     g_hash_table_insert(dirty_map, key, value);
-            // }
-            // for dirty frequency statistics
+            // for calc dirty pages decrease
+            nr = (prefetched_page->block_offset >> 12) +
+                         (prefetched_page->offset >> 12);
+            set_bit(nr, smc_info->prefetch_bitmap);
+            // for calc dirty pages decrease
         }
 
         while (page_idx < subset->nb_eles) {
@@ -807,85 +788,13 @@ int smc_pml_persist_unprefetched_pages(SMCInfo *smc_info)
                                               unprefetched_page->offset);
             ++page_idx;
 
-
-            // for dirty frequency statistics
-            // phy_addr = unprefetched_page->block_offset + unprefetched_page->offset;
-            // key = (void *)(uintptr_t)phy_addr;
-            // value = g_hash_table_lookup(dirty_map,
-            //                 (void *)(uintptr_t)phy_addr);
-            // if (value == NULL) {
-            //     g_hash_table_insert(dirty_map, key, GUINT_TO_POINTER(1));
-            // } else {
-            //     nb_dirty_times = GPOINTER_TO_UINT(value);
-            //     nb_dirty_times++;
-            //     value = GUINT_TO_POINTER(nb_dirty_times);
-            //     g_hash_table_insert(dirty_map, key, value);
-            // }
-            // for dirty frequency statistics        
-        }
+            // for calc dirty pages decrease
+            nr = (unprefetched_page->block_offset >> 12) +
+                         (unprefetched_page->offset >> 12);
+            clear_bit(nr, smc_info->prefetch_bitmap);
+            // for calc dirty pages decrease
+     }
     }
-
-
-    // for dirty frequency statistics
-    // GList *value_list = g_hash_table_get_values(dirty_map);
-    // GList *iter = value_list;
-    // while (iter != NULL) {
-    //     nb_dirty_times = GPOINTER_TO_UINT(iter->data);
-    //     iter = iter->next;
-    //     if (nb_dirty_times == 1) {
-    //         stat_nb_one_round++;
-    //     }
-    //     if (nb_dirty_times == nb_round) {
-    //         stat_nb_all_round++;
-    //     }
-    //     if (nb_dirty_times >= nb_round * 0.9) {
-    //         stat_nb_90p_round++;
-    //     }
-    //     if (nb_dirty_times >= nb_round * 0.8) {
-    //         stat_nb_80p_round++;
-    //     }
-    //     if (nb_dirty_times >= nb_round * 0.7) {
-    //         stat_nb_70p_round++;
-    //     }
-    //     if (nb_dirty_times >= nb_round * 0.6) {
-    //         stat_nb_60p_round++;
-    //     }
-    //     if (nb_dirty_times >= nb_round * 0.5) {
-    //         stat_nb_50p_round++;
-    //     }
-    //     stat_nb_all_dirty_pages++;
-    // }
-    // if (stat_nb_all_dirty_pages > 0) {
-    //     stat_one_round_rate = stat_nb_one_round / stat_nb_all_dirty_pages;
-    //     stat_all_round_rate = stat_nb_all_round / stat_nb_all_dirty_pages;
-    //     stat_90p_round_rate = stat_nb_90p_round / stat_nb_all_dirty_pages;
-    //     stat_80p_round_rate = stat_nb_80p_round / stat_nb_all_dirty_pages;
-    //     stat_70p_round_rate = stat_nb_70p_round / stat_nb_all_dirty_pages;
-    //     stat_60p_round_rate = stat_nb_60p_round / stat_nb_all_dirty_pages;
-    //     stat_50p_round_rate = stat_nb_50p_round / stat_nb_all_dirty_pages;
-    //     smc_info->stat_one_round_rate += stat_one_round_rate;
-    //     smc_info->stat_all_round_rate += stat_all_round_rate;
-    //     smc_info->stat_90p_round_rate += stat_90p_round_rate;
-    //     smc_info->stat_80p_round_rate += stat_80p_round_rate;
-    //     smc_info->stat_70p_round_rate += stat_70p_round_rate;
-    //     smc_info->stat_60p_round_rate += stat_60p_round_rate;
-    //     smc_info->stat_50p_round_rate += stat_50p_round_rate;
-    //     smc_info->stat_calc_times++;
-    //     SMC_LOG(STATISTIC, "Now one_round_rate is %lf, all_round_rate is %lf,"
-    //         " 90%%_round_rate is %lf,"
-    //         " 80%%_round_rate is %lf,"
-    //         " 70%%_round_rate is %lf,"
-    //         " 60%%_round_rate is %lf,"
-    //         " 50%%_round_rate is %lf",
-    //         stat_one_round_rate, stat_all_round_rate,
-    //         stat_90p_round_rate,
-    //         stat_80p_round_rate,
-    //         stat_70p_round_rate,
-    //         stat_60p_round_rate,
-    //         stat_50p_round_rate);
-    // }
-    
-    // for dirty frequency statistics
     return 0;
 }
 

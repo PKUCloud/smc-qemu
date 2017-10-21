@@ -1341,6 +1341,7 @@ static void *mc_thread(void *opaque)
             if (wait_time) {
                 g_usleep(wait_time);
             }
+            glo_smc_info.not_to_prefetch_flag = 0;
             if (remain_time <= 0) {
                 if (!prefetch_round) {
                     /* Have no time to prefetch, so send an empty prefetch info first,
@@ -1348,6 +1349,7 @@ static void *mc_thread(void *opaque)
                      */
                     smc_pml_send_empty_prefetch_info(f_opaque, &glo_smc_info);
                     smc_pml_prefetch_pages_next_subset(&glo_smc_info);
+                    glo_smc_info.not_to_prefetch_flag = 1;
                 }
                 /* Prefetching done */
                 smc_pml_send_prefetch_signal(f_opaque, true);
@@ -2163,22 +2165,23 @@ void smc_print_stat(void)
                s->checkpoints);
     }
     printf("[SMC]Max prefetch speed (pages/ms): %d\n", s->fetch_speed);
-    // for dirty frequency statistics
-    // printf("[SMC]One_round_rate is %lf\n", 
-    //         glo_smc_info.stat_one_round_rate / glo_smc_info.stat_calc_times);
-    // printf("[SMC]All_round_rate is %lf\n", 
-    //         glo_smc_info.stat_all_round_rate / glo_smc_info.stat_calc_times);
-    // printf("[SMC]90%%_round_rate is %lf\n", 
-    //         glo_smc_info.stat_90p_round_rate / glo_smc_info.stat_calc_times);
-    // printf("[SMC]80%%_round_rate is %lf\n", 
-    //         glo_smc_info.stat_80p_round_rate / glo_smc_info.stat_calc_times);
-    // printf("[SMC]70%%_round_rate is %lf\n", 
-    //         glo_smc_info.stat_70p_round_rate / glo_smc_info.stat_calc_times);
-    // printf("[SMC]60%%_round_rate is %lf\n", 
-    //         glo_smc_info.stat_60p_round_rate / glo_smc_info.stat_calc_times);
-    // printf("[SMC]50%%_round_rate is %lf\n", 
-    //         glo_smc_info.stat_50p_round_rate / glo_smc_info.stat_calc_times);
-    // for dirty frequency statistics
+
+    // for calc dirty pages decrease
+    printf("[SMC]Totally dirty pages is %lu, prefetched pages is %lu, decrease %.6lf\n", 
+        glo_smc_info.stat_nb_unprefetched_pages + glo_smc_info.stat_nb_prefetched_pages, 
+        glo_smc_info.stat_nb_prefetched_pages,
+        (((double)glo_smc_info.stat_nb_prefetched_pages) /
+        ((double)(glo_smc_info.stat_nb_unprefetched_pages + glo_smc_info.stat_nb_prefetched_pages))));
+    printf("[SMC]In the epoches that we do prefetch, Totally dirty pages is %lu,"
+        " prefetched pages is %lu, decrease %.6lf\n",
+        glo_smc_info.stat_nb_unprefetched_pages_when_do_prefetch + glo_smc_info.stat_nb_prefetched_pages, 
+        glo_smc_info.stat_nb_prefetched_pages,
+        (((double)glo_smc_info.stat_nb_prefetched_pages) /
+        (((double)(glo_smc_info.stat_nb_unprefetched_pages_when_do_prefetch 
+                + glo_smc_info.stat_nb_prefetched_pages)) == 0 ? 1 : 
+        ((double)(glo_smc_info.stat_nb_unprefetched_pages_when_do_prefetch 
+                + glo_smc_info.stat_nb_prefetched_pages)))));
+    // for calc dirty pages decrease
 
 
     fflush(smc_log_file);

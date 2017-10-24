@@ -1604,7 +1604,7 @@ static int qemu_rdma_block_for_wrid(RDMAContext *rdma,
         perror("ibv_req_notify_cq");
         return -ret;
     }
-    SMC_LOG(GEN, "req_notify_cq on lc->cq[%p]", lc->cq);
+    SMC_LOG(DIE, "req_notify_cq on lc->cq[%p]", lc->cq);
 
     /* poll cq first */
     while (wr_id != wrid_requested) {
@@ -1615,7 +1615,7 @@ static int qemu_rdma_block_for_wrid(RDMAContext *rdma,
 
         wr_id = wr_id_in & RDMA_WRID_TYPE_MASK;
 
-        SMC_LOG(GEN, "expected WRID=%d poll WRID=%" PRIu64, wrid_requested, wr_id);
+        SMC_LOG(DIE, "expected WRID=%d poll WRID=%" PRIu64, wrid_requested, wr_id);
         if (wr_id == RDMA_WRID_NONE) {
             break;
         }
@@ -1631,9 +1631,9 @@ static int qemu_rdma_block_for_wrid(RDMAContext *rdma,
          * so don't yield unless we know we're running inside of a coroutine.
          */
         if (qemu_in_coroutine()) {
-            SMC_LOG(GEN, "yield_until_fd_readable(lc->comp_chan->fd)");
+            SMC_LOG(DIE, "yield_until_fd_readable(lc->comp_chan->fd)");
             yield_until_fd_readable(lc->comp_chan->fd);
-            SMC_LOG(GEN, "return after yield");
+            SMC_LOG(DIE, "return after yield");
         }
 
         ret = ibv_get_cq_event(lc->comp_chan, &cq, &cq_ctx);
@@ -1641,7 +1641,7 @@ static int qemu_rdma_block_for_wrid(RDMAContext *rdma,
             perror("ibv_get_cq_event");
             goto err_block_for_wrid;
         }
-        SMC_LOG(GEN, "ibv_get_cq_event()");
+        SMC_LOG(DIE, "ibv_get_cq_event()");
 
         num_cq_events++;
 
@@ -1651,17 +1651,18 @@ static int qemu_rdma_block_for_wrid(RDMAContext *rdma,
             perror("ibv_req_notify_cq");
             goto err_block_for_wrid;
         }
-        SMC_LOG(GEN, "ibv_req_notify_cq()");
+        SMC_LOG(DIE, "ibv_req_notify_cq()");
 
         while (wr_id != wrid_requested) {
             ret = qemu_rdma_poll(rdma, lc, &wr_id_in, byte_len);
             if (ret < 0) {
+                SMC_LOG(DIE, "the ret value is %d.", ret);
                 goto err_block_for_wrid;
             }
 
             wr_id = wr_id_in & RDMA_WRID_TYPE_MASK;
 
-            SMC_LOG(GEN, "expected WRID=%d poll WRID=%" PRIu64, wrid_requested,
+            SMC_LOG(DIE, "expected WRID=%d poll WRID=%" PRIu64, wrid_requested,
                     wr_id);
 
             if (wr_id == RDMA_WRID_NONE) {
@@ -1862,7 +1863,7 @@ static int qemu_rdma_exchange_send(RDMAContext *rdma, RDMAControlHeader *head,
      */
     if (rdma->control_ready_expected) {
         RDMAControlHeader resp;
-        SMC_LOG(GEN, "wait for RDMA_CONTROL_READY msg on RDMA_WRID_READY");
+        SMC_LOG(DIE, "wait for RDMA_CONTROL_READY msg on RDMA_WRID_READY");
         ret = qemu_rdma_exchange_get_response(rdma,
                                     &resp, RDMA_CONTROL_READY, RDMA_WRID_READY);
         if (ret < 0) {

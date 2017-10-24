@@ -19,10 +19,11 @@
 /* TODO: this should match the dev_cap.max_qp_wr,
  * which can be found by using $ ibv_devinfo -v
  */
-#define SMC_NUM_DIRTY_PAGES_SEND        16351
+// #define SMC_NUM_DIRTY_PAGES_SEND        16351
+#define SMC_NUM_DIRTY_PAGES_SEND        3000
 #define SMC_PML_PREFETCH_ROUND          5
 /* default checkpoint frequency */
-#define MC_DEFAULT_CHECKPOINT_FREQ_MS   5
+#define MC_DEFAULT_CHECKPOINT_FREQ_MS   40
 
 /* Info about a dirty page within a chunk */
 typedef struct SMCDirtyPage {

@@ -764,7 +764,7 @@ int smc_pml_persist_unprefetched_pages(SMCInfo *smc_info)
         cnt = 0;
        
 
-        SMC_LOG(PML, "Round %d: should prefetch %d pages, but we prefetch %d"
+        SMC_LOG(DIE, "Round %d: should prefetch %d pages, but we prefetch %d"
                 " pages actually, remains %d pages", round_idx, subset->nb_eles,
                 page_idx, subset->nb_eles - page_idx);
         while (cnt < prefetched_pages) {

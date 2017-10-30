@@ -1341,7 +1341,9 @@ static void *mc_thread(void *opaque)
             if (wait_time) {
                 g_usleep(wait_time);
             }
-            // glo_smc_info.not_to_prefetch_flag = 0;
+            // for calc total and per second dirty pages decrease 
+            glo_smc_info.not_to_prefetch_flag = 0;
+            // for calc total and per second dirty pages decrease 
             if (remain_time <= 0) {
                 if (!prefetch_round) {
                     /* Have no time to prefetch, so send an empty prefetch info first,
@@ -1349,7 +1351,9 @@ static void *mc_thread(void *opaque)
                      */
                     smc_pml_send_empty_prefetch_info(f_opaque, &glo_smc_info);
                     smc_pml_prefetch_pages_next_subset(&glo_smc_info);
-                    // glo_smc_info.not_to_prefetch_flag = 1;
+                    // for calc total and per second dirty pages decrease 
+                    glo_smc_info.not_to_prefetch_flag = 1;
+                    // for calc total and per second dirty pages decrease 
                 }
                 /* Prefetching done */
                 smc_pml_send_prefetch_signal(f_opaque, true);
@@ -1422,15 +1426,36 @@ static void *mc_thread(void *opaque)
                 "ram_copy_time %" PRId64 " ",
                 s->checkpoints, smc_dirty_pages_count(&glo_smc_info),
                 s->bytes_xfer, s->xmit_time, s->ram_copy_time);
-
+        // for calc total and per second dirty pages decrease 
+        // printf("chkpt,prefeth,unprefetch,unprefetch_when_do,prefetch_rate_total,prefetch_rate_when_do\n");
+        // for calc total and per second dirty pages decrease 
         if (end_time >= initial_time + 1000) {
-            printf("[SMC]bytes %ld xmit_time %" PRId64 " downtime %" PRIu64
-                   " ram_copy_time %" PRId64 " wait_time %" PRIu64
-                   " fetch_speed %d fetch_time %" PRId64
-                   " checkpoints %" PRId64 "\n",
-                   s->bytes_xfer, s->xmit_time, s->downtime, s->ram_copy_time,
-                   wait_time, fetch_speed, fetch_time, s->checkpoints);
+        //     printf("[SMC]bytes %ld xmit_time %" PRId64 " downtime %" PRIu64
+        //            " ram_copy_time %" PRId64 " wait_time %" PRIu64
+        //            " fetch_speed %d fetch_time %" PRId64
+        //            " checkpoints %" PRId64 "\n",
+        //            s->bytes_xfer, s->xmit_time, s->downtime, s->ram_copy_time,
+        //            wait_time, fetch_speed, fetch_time, s->checkpoints);
+            // for calc total and per second dirty pages decrease 
+            printf("%ld,%lu,%lu,%lu,%.6f,%.6f\n", s->checkpoints, 
+                    glo_smc_info.stat_nb_prefetched_pages_per_sec,
+                    glo_smc_info.stat_nb_unprefetched_pages_per_sec,
+                    glo_smc_info.stat_nb_unprefetched_pages_when_do_prefetch_per_sec,
+                    (((double)glo_smc_info.stat_nb_prefetched_pages_per_sec) /
+                    ((double)(glo_smc_info.stat_nb_unprefetched_pages_per_sec 
+                        + glo_smc_info.stat_nb_prefetched_pages_per_sec))),
+                    (((double)glo_smc_info.stat_nb_prefetched_pages_per_sec) /
+                    (((double)(glo_smc_info.stat_nb_unprefetched_pages_when_do_prefetch_per_sec 
+                            + glo_smc_info.stat_nb_prefetched_pages_per_sec)) == 0 ? 1 : 
+                    ((double)(glo_smc_info.stat_nb_unprefetched_pages_when_do_prefetch_per_sec 
+                            + glo_smc_info.stat_nb_prefetched_pages_per_sec))))
+                    );
+            glo_smc_info.stat_nb_prefetched_pages_per_sec = 0;
+            glo_smc_info.stat_nb_unprefetched_pages_per_sec = 0;
+            glo_smc_info.stat_nb_unprefetched_pages_when_do_prefetch_per_sec = 0;
+            // for calc total and per second dirty pages decrease 
             initial_time = end_time;
+
         }
     }
 
@@ -2166,7 +2191,7 @@ void smc_print_stat(void)
     }
     printf("[SMC]Max prefetch speed (pages/ms): %d\n", s->fetch_speed);
 
-    // for calc dirty pages decrease
+    // for calc dirty pages decrease 
     // printf("[SMC]Totally dirty pages is %lu, prefetched pages is %lu, decrease %.6lf\n", 
     //     glo_smc_info.stat_nb_unprefetched_pages + glo_smc_info.stat_nb_prefetched_pages, 
     //     glo_smc_info.stat_nb_prefetched_pages,
@@ -2181,7 +2206,7 @@ void smc_print_stat(void)
     //             + glo_smc_info.stat_nb_prefetched_pages)) == 0 ? 1 : 
     //     ((double)(glo_smc_info.stat_nb_unprefetched_pages_when_do_prefetch 
     //             + glo_smc_info.stat_nb_prefetched_pages)))));
-    // for calc dirty pages decrease
+    // for calc dirty pages decrease 
 
 
     fflush(smc_log_file);

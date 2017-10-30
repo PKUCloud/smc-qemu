@@ -23,7 +23,7 @@
 #define SMC_NUM_DIRTY_PAGES_SEND        3000
 #define SMC_PML_PREFETCH_ROUND          5
 /* default checkpoint frequency */
-#define MC_DEFAULT_CHECKPOINT_FREQ_MS   40
+#define MC_DEFAULT_CHECKPOINT_FREQ_MS   5
 
 /* Info about a dirty page within a chunk */
 typedef struct SMCDirtyPage {
@@ -142,14 +142,19 @@ typedef struct SMCInfo {
     double pml_xmit_speed;
     bool early_flush_buffer;
 
-    // for calc dirty pages decrease
-    // uint64_t stat_nb_unprefetched_pages;
-    // uint64_t stat_nb_unprefetched_pages_when_do_prefetch;
-    // uint64_t stat_nb_prefetched_pages;
-    // double stat_dirty_decrease_rate; 
-    // int not_to_prefetch_flag;
-    // unsigned long *prefetch_bitmap;
-    // for calc dirty pages decrease
+    // for calc total and per second dirty pages decrease 
+    uint64_t stat_nb_unprefetched_pages;
+    uint64_t stat_nb_unprefetched_pages_when_do_prefetch;
+    uint64_t stat_nb_prefetched_pages;
+    double stat_dirty_decrease_rate; 
+    int not_to_prefetch_flag;
+    unsigned long *prefetch_bitmap;
+
+    uint64_t stat_nb_unprefetched_pages_per_sec;
+    uint64_t stat_nb_unprefetched_pages_when_do_prefetch_per_sec;
+    uint64_t stat_nb_prefetched_pages_per_sec;
+    double stat_dirty_decrease_rate_per_sec; 
+    // for calc total and per second dirty pages decrease 
 } SMCInfo;
 
 extern SMCInfo glo_smc_info;

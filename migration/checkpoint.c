@@ -1442,8 +1442,10 @@ static void *mc_thread(void *opaque)
                     glo_smc_info.stat_nb_unprefetched_pages_per_sec,
                     glo_smc_info.stat_nb_unprefetched_pages_when_do_prefetch_per_sec,
                     (((double)glo_smc_info.stat_nb_prefetched_pages_per_sec) /
+                    (((double)(glo_smc_info.stat_nb_unprefetched_pages_per_sec 
+                            + glo_smc_info.stat_nb_prefetched_pages_per_sec)) == 0 ? 1 : 
                     ((double)(glo_smc_info.stat_nb_unprefetched_pages_per_sec 
-                        + glo_smc_info.stat_nb_prefetched_pages_per_sec))),
+                            + glo_smc_info.stat_nb_prefetched_pages_per_sec)))),
                     (((double)glo_smc_info.stat_nb_prefetched_pages_per_sec) /
                     (((double)(glo_smc_info.stat_nb_unprefetched_pages_when_do_prefetch_per_sec 
                             + glo_smc_info.stat_nb_prefetched_pages_per_sec)) == 0 ? 1 : 

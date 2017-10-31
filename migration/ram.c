@@ -1579,6 +1579,10 @@ static int ram_save_complete(QEMUFile *f, void *opaque)
 
     // for calc total and per second dirty pages decrease 
     if (smc_is_init(&glo_smc_info)) {
+        glo_smc_info.stat_nb_unprefetched_pages += migration_dirty_pages;
+        glo_smc_info.stat_nb_unprefetched_pages_per_sec += migration_dirty_pages;
+    } 
+    if (smc_is_init(&glo_smc_info) && !glo_smc_info.not_to_prefetch_flag) {
         uint64_t tmp_stat_nb_prefetched_pages = 0;
         unsigned long *tmp_bitmap = bitmap_new(529074);
         bitmap_and(tmp_bitmap, glo_smc_info.prefetch_bitmap, migration_bitmap, 529074);
@@ -1592,21 +1596,8 @@ static int ram_save_complete(QEMUFile *f, void *opaque)
                 tmp_stat_nb_prefetched_pages++;
             }
         }
-        glo_smc_info.stat_nb_unprefetched_pages += migration_dirty_pages;
-        glo_smc_info.stat_nb_unprefetched_pages_per_sec += migration_dirty_pages;
-        if (!glo_smc_info.not_to_prefetch_flag) {
-            glo_smc_info.stat_nb_unprefetched_pages_when_do_prefetch += migration_dirty_pages;
-            glo_smc_info.stat_nb_unprefetched_pages_when_do_prefetch_per_sec += migration_dirty_pages;
-        }
-
-        if (glo_smc_info.not_to_prefetch_flag) {
-            SMC_LOG(STATISTIC, "");
-        }
-        SMC_LOG(STATISTIC, "prefetch %lu pages, unprefetch %lu pages.",
-                    tmp_stat_nb_prefetched_pages, migration_dirty_pages);
-        if (glo_smc_info.not_to_prefetch_flag) {
-            SMC_LOG(STATISTIC, "donot prefetch this epoch\n");
-        }
+        glo_smc_info.stat_nb_unprefetched_pages_when_do_prefetch += migration_dirty_pages;
+        glo_smc_info.stat_nb_unprefetched_pages_when_do_prefetch_per_sec += migration_dirty_pages;
         if (tmp_bitmap) {
             g_free(tmp_bitmap);
         }

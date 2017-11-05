@@ -223,11 +223,8 @@ void smc_init(SMCInfo *smc_info, void *opaque)
     //smc_info->need_clear_incheckpoint_bitmap = false;
 
     // for calc per epoch and per 5 seconds dirty pages
-    smc_info->prefetch_bitmap = bitmap_new(529074); 
     smc_info->stat_nb_unprefetched_pages_per_5sec = 0;
-    smc_info->stat_nb_prefetched_pages_per_5sec = 0;
     smc_info->stat_nb_epochs_per_5sec = 0;
-    smc_info->not_to_prefetch_flag = 0;
     // for calc per epoch and per 5 seconds dirty pages
 }
 
@@ -253,12 +250,6 @@ void smc_exit(SMCInfo *smc_info)
     smc_info->init = false;
     smc_info->enable_incheckpoint_bitmap = false;
     //smc_info->need_clear_incheckpoint_bitmap = false;
-
-    // for calc per epoch and per 5 seconds dirty pages
-    if (smc_info->prefetch_bitmap) {
-        g_free(smc_info->prefetch_bitmap);
-    }
-    // for calc per epoch and per 5 seconds dirty pages
 }
 
 void smc_dirty_pages_insert(SMCInfo *smc_info, uint64_t block_offset,
@@ -750,11 +741,6 @@ int smc_pml_persist_unprefetched_pages(SMCInfo *smc_info)
     SMCPMLPrefetchPage *unprefetched_page;
     SMCPMLPrefetchPage *prefetched_page;
 
-    // for calc per epoch and per 5 seconds dirty pages 
-    bitmap_clear(smc_info->prefetch_bitmap, 0, 529074);
-    unsigned long nr;
-    // for calc per epoch and per 5 seconds dirty pages 
-
 
     for (round_idx = 0; round_idx < nb_round; round_idx++) {
         subset = (SMCSet *)smc_superset_get_idex(superset, round_idx);
@@ -772,12 +758,6 @@ int smc_pml_persist_unprefetched_pages(SMCInfo *smc_info)
             smc_pml_clear_bitmap_through_offset(prefetched_page->block_offset,
                                               prefetched_page->offset);
             ++cnt;
-
-            // for calc per epoch and per 5 seconds dirty pages
-            nr = (prefetched_page->block_offset >> 12) +
-                         (prefetched_page->offset >> 12);
-            set_bit(nr, smc_info->prefetch_bitmap);
-            // for calc per epoch and per 5 seconds dirty pages 
         }
 
         while (page_idx < subset->nb_eles) {
@@ -786,13 +766,7 @@ int smc_pml_persist_unprefetched_pages(SMCInfo *smc_info)
             smc_pml_set_bitmap_through_offset(unprefetched_page->block_offset,
                                               unprefetched_page->offset);
             ++page_idx;
-
-            // for calc per epoch and per 5 seconds dirty pages
-            nr = (unprefetched_page->block_offset >> 12) +
-                         (unprefetched_page->offset >> 12);
-            clear_bit(nr, smc_info->prefetch_bitmap);
-            // for calc per epoch and per 5 seconds dirty pages
-     }
+        }
     }
     return 0;
 }

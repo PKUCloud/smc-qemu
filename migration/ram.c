@@ -1580,21 +1580,6 @@ static int ram_save_complete(QEMUFile *f, void *opaque)
     // for calc per epoch and per 5 seconds dirty pages
     if (smc_is_init(&glo_smc_info)) {
         glo_smc_info.stat_nb_unprefetched_pages_per_5sec += migration_dirty_pages;
-    } 
-    if (smc_is_init(&glo_smc_info) && !glo_smc_info.not_to_prefetch_flag) {
-        unsigned long *tmp_bitmap = bitmap_new(529074);
-        bitmap_and(tmp_bitmap, glo_smc_info.prefetch_bitmap, migration_bitmap, 529074);
-        bitmap_xor(glo_smc_info.prefetch_bitmap, glo_smc_info.prefetch_bitmap, tmp_bitmap, 529074);
-        unsigned long next = 0;
-        while (next < 529074) {
-            next = find_next_bit(glo_smc_info.prefetch_bitmap, 8267 * 64, next);
-            if (next <= 529074 && test_and_clear_bit(next, glo_smc_info.prefetch_bitmap)) {
-                glo_smc_info.stat_nb_prefetched_pages_per_5sec++;
-            }
-        }
-        if (tmp_bitmap) {
-            g_free(tmp_bitmap);
-        }
     }
     // for calc per epoch and per 5 seconds dirty pages
 

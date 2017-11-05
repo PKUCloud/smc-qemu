@@ -1345,9 +1345,6 @@ static void *mc_thread(void *opaque)
             if (wait_time) {
                 g_usleep(wait_time);
             }
-            // for calc per epoch and per 5 seconds dirty pages 
-            glo_smc_info.not_to_prefetch_flag = 0;
-            // for calc per epoch and per 5 seconds dirty pages
             if (remain_time <= 0) {
                 if (!prefetch_round) {
                     /* Have no time to prefetch, so send an empty prefetch info first,
@@ -1355,9 +1352,6 @@ static void *mc_thread(void *opaque)
                      */
                     smc_pml_send_empty_prefetch_info(f_opaque, &glo_smc_info);
                     smc_pml_prefetch_pages_next_subset(&glo_smc_info);
-                    // for calc per epoch and per 5 seconds dirty pages
-                    glo_smc_info.not_to_prefetch_flag = 1;
-                    // for calc per epoch and per 5 seconds dirty pages
                 }
                 /* Prefetching done */
                 smc_pml_send_prefetch_signal(f_opaque, true);
@@ -1439,14 +1433,12 @@ static void *mc_thread(void *opaque)
         //            wait_time, fetch_speed, fetch_time, s->checkpoints);
             
             // for calc per epoch and per 5 seconds dirty pages 
-            printf("%ld,%lu, %ld\n", glo_smc_info.stat_nb_epochs_per_5sec,
-            glo_smc_info.stat_nb_prefetched_pages_per_5sec + glo_smc_info.stat_nb_unprefetched_pages_per_5sec,
-            (glo_smc_info.stat_nb_prefetched_pages_per_5sec + glo_smc_info.stat_nb_unprefetched_pages_per_5sec)
-            / glo_smc_info.stat_nb_epochs_per_5sec);
+            printf("%ld %lu %ld\n", glo_smc_info.stat_nb_epochs_per_5sec,
+                glo_smc_info.stat_nb_unprefetched_pages_per_5sec,
+                1 + glo_smc_info.stat_nb_unprefetched_pages_per_5sec / glo_smc_info.stat_nb_epochs_per_5sec);
 
 
             glo_smc_info.stat_nb_epochs_per_5sec = 0;
-            glo_smc_info.stat_nb_prefetched_pages_per_5sec = 0;
             glo_smc_info.stat_nb_unprefetched_pages_per_5sec = 0;
             // for calc per epoch and per 5 seconds dirty pages 
             initial_time = end_time;

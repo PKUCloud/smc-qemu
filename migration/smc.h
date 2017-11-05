@@ -143,10 +143,7 @@ typedef struct SMCInfo {
     bool early_flush_buffer;
 
     // for calc per epoch and per 5 seconds dirty pages
-    unsigned long *prefetch_bitmap;
-    int not_to_prefetch_flag;
     uint64_t stat_nb_unprefetched_pages_per_5sec;
-    uint64_t stat_nb_prefetched_pages_per_5sec;
     long stat_nb_epochs_per_5sec; 
     // for calc per epoch and per 5 seconds dirty pages
 } SMCInfo;

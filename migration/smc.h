@@ -142,19 +142,13 @@ typedef struct SMCInfo {
     double pml_xmit_speed;
     bool early_flush_buffer;
 
-    // for calc total and per second dirty pages decrease 
-    uint64_t stat_nb_unprefetched_pages;
-    uint64_t stat_nb_unprefetched_pages_when_do_prefetch;
-    uint64_t stat_nb_prefetched_pages;
-    double stat_dirty_decrease_rate; 
-    int not_to_prefetch_flag;
+    // for calc per epoch and per 5 seconds dirty pages
     unsigned long *prefetch_bitmap;
-
-    uint64_t stat_nb_unprefetched_pages_per_sec;
-    uint64_t stat_nb_unprefetched_pages_when_do_prefetch_per_sec;
-    uint64_t stat_nb_prefetched_pages_per_sec;
-    double stat_dirty_decrease_rate_per_sec; 
-    // for calc total and per second dirty pages decrease 
+    int not_to_prefetch_flag;
+    uint64_t stat_nb_unprefetched_pages_per_5sec;
+    uint64_t stat_nb_prefetched_pages_per_5sec;
+    long stat_nb_epochs_per_5sec; 
+    // for calc per epoch and per 5 seconds dirty pages
 } SMCInfo;
 
 extern SMCInfo glo_smc_info;

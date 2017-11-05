@@ -76,6 +76,11 @@ typedef struct SMCInfo {
     void *opaque;   /* QEMUFileRDMA */
     SMCCache cache;
     uint64_t nr_checkpoints;
+
+    // for calc total and per second dirty pages decrease 
+    uint64_t stat_nb_dirty_pages_per_5sec;    
+    long stat_nb_epoches_per_5sec;
+    // for calc total and per second dirty pages decrease 
 } SMCInfo;
 
 extern SMCInfo glo_smc_info;

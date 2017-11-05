@@ -1295,6 +1295,12 @@ static int ram_save_complete(QEMUFile *f, void *opaque)
 
     ram_control_before_iterate(f, RAM_CONTROL_FINISH);
 
+    // for calc total and per second dirty pages decrease 
+    if (smc_is_init(&glo_smc_info)) {
+        glo_smc_info.stat_nb_dirty_pages_per_5sec += migration_dirty_pages;
+    }
+    // for calc total and per second dirty pages decrease 
+
     /* try transferring iterative blocks of memory */
 
     /* flush all remaining blocks regardless of rate limiting */

@@ -107,6 +107,11 @@ void smc_init(SMCInfo *smc_info, void *opaque)
 #endif
     smc_info->opaque = opaque;
     smc_info->init = true;
+
+    // for calc total and per second dirty pages decrease 
+    smc_info->stat_nb_dirty_pages_per_5sec = 0;
+    smc_info->stat_nb_epoches_per_5sec = 0;
+    // for calc total and per second dirty pages decrease 
 }
 
 void smc_exit(SMCInfo *smc_info)

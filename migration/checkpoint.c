@@ -105,7 +105,7 @@ static void flush_trace_buffer(void) {
 #define MC_SLAB_BUFFER_SIZE     (5UL * 1024UL * 1024UL) /* empirical */
 #define MC_DEV_NAME_MAX_SIZE    256
 
-#define MC_DEFAULT_CHECKPOINT_FREQ_MS 40 /* too slow, but best for now */
+#define MC_DEFAULT_CHECKPOINT_FREQ_MS 5 /* too slow, but best for now */
 #define CALC_MAX_STRIKES()                                           \
     do {  max_strikes = (max_strikes_delay_secs * 1000) / freq_ms; } \
     while (0)
@@ -1248,6 +1248,9 @@ static void *mc_thread(void *opaque)
         */
         s->bytes_xfer = mc.slab_total;
         s->checkpoints = ++(mc.checkpoints);
+        // for calc per epoch and per 5 seconds dirty pages
+        glo_smc_info.stat_nb_epoches_per_5sec++;                
+        // for calc per epoch and per 5 seconds dirty pages
 
         wait_time = (s->xmit_time <= freq_ms) ? (freq_ms - s->xmit_time) : 0;
 #ifdef SMC_PREFETCH
@@ -1298,14 +1301,24 @@ static void *mc_thread(void *opaque)
             fetch_time = 0;
         }
 
-        if (end_time >= initial_time + 1000) {
-            printf("[SMC]bytes %ld xmit_time %" PRId64 " downtime %" PRIu64
-                   " ram_copy_time %" PRId64 " wait_time %" PRIu64
-                   " fetch_speed %d fetch_time %" PRId64
-                   " checkpoints %" PRId64 "\n",
-                   s->bytes_xfer, s->xmit_time, s->downtime, s->ram_copy_time,
-                   wait_time, fetch_speed, fetch_time, s->checkpoints);
+        if (end_time >= initial_time + 5000) {
+            // printf("[SMC]bytes %ld xmit_time %" PRId64 " downtime %" PRIu64
+            //        " ram_copy_time %" PRId64 " wait_time %" PRIu64
+            //        " fetch_speed %d fetch_time %" PRId64
+            //        " checkpoints %" PRId64 "\n",
+            //        s->bytes_xfer, s->xmit_time, s->downtime, s->ram_copy_time,
+            //        wait_time, fetch_speed, fetch_time, s->checkpoints);
+
+            // for calc total and per second dirty pages decrease 
+            printf("%ld,%lu,%ld\n", glo_smc_info.stat_nb_epoches_per_5sec,
+                glo_smc_info.stat_nb_dirty_pages_per_5sec,
+                glo_smc_info.stat_nb_dirty_pages_per_5sec / 
+                    glo_smc_info.stat_nb_epoches_per_5sec
+                );
             initial_time = end_time;
+            glo_smc_info.stat_nb_dirty_pages_per_5sec = 0;
+            glo_smc_info.stat_nb_epoches_per_5sec = 0;
+            // for calc total and per second dirty pages decrease 
         }
     }
 

@@ -1301,7 +1301,9 @@ static void *mc_thread(void *opaque)
             fetch_time = 0;
         }
 
-        if (end_time >= initial_time + 5000) {
+        if (end_time >= initial_time + 1000) {
+            printf("[SMC]checkpoints %" PRId64 ", total dirty_pages: %lu\n", 
+                s->checkpoints, glo_smc_info.stat_nb_dirty_pages_per_5sec);
             // printf("[SMC]bytes %ld xmit_time %" PRId64 " downtime %" PRIu64
             //        " ram_copy_time %" PRId64 " wait_time %" PRIu64
             //        " fetch_speed %d fetch_time %" PRId64
@@ -1310,15 +1312,18 @@ static void *mc_thread(void *opaque)
             //        wait_time, fetch_speed, fetch_time, s->checkpoints);
 
             // for calc total and per second dirty pages decrease 
-            printf("%ld,%lu,%ld\n", glo_smc_info.stat_nb_epoches_per_5sec,
-                glo_smc_info.stat_nb_dirty_pages_per_5sec,
-                glo_smc_info.stat_nb_dirty_pages_per_5sec / 
-                    glo_smc_info.stat_nb_epoches_per_5sec
-                );
-            initial_time = end_time;
-            glo_smc_info.stat_nb_dirty_pages_per_5sec = 0;
-            glo_smc_info.stat_nb_epoches_per_5sec = 0;
+            // printf("%ld %lu %ld\n", glo_smc_info.stat_nb_epoches_per_5sec,
+            //     glo_smc_info.stat_nb_dirty_pages_per_5sec,
+            //     glo_smc_info.stat_nb_dirty_pages_per_5sec / 
+            //         glo_smc_info.stat_nb_epoches_per_5sec
+            //     );
+            // initial_time = end_time;
+            // glo_smc_info.stat_nb_dirty_pages_per_5sec = 0;
+            // glo_smc_info.stat_nb_epoches_per_5sec = 0;
             // for calc total and per second dirty pages decrease 
+            
+
+            initial_time = end_time;
         }
     }
 
@@ -1991,6 +1996,7 @@ void smc_print_stat(void)
     printf("[SMC]Migration State: %s\n", MigrationStatus_lookup[s->state]);
     printf("[SMC]Frequency (ms): %" PRIu64 "\n", freq_ms);
     printf("[SMC]Num of Checkpoints: %" PRId64 "\n", s->checkpoints);
+    printf("[SMC]Total dirty_pages: %lu\n", glo_smc_info.stat_nb_dirty_pages_per_5sec);
     printf("[SMC]Num of sleeps in MC: %" PRId64 "\n", s->nr_sleeps);
     printf("[SMC]Num of dirty pages: %" PRId64 "\n", s->nr_dirty_pages);
     printf("[SMC]Num of transfered pages: %" PRId64 "\n", s->nr_trans_pages);

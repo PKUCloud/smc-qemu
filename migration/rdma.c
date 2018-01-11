@@ -4966,7 +4966,7 @@ static int smc_do_prefetch_page(RDMAContext *rdma, SMCInfo *smc_info,
 }
 
 static int smc_pml_do_prefetch_page(RDMAContext *rdma, SMCInfo *smc_info,
-                                            SMCPMLPrefetchPage *page, int page_idx)
+                                            SMCPMLPrefetchPage *page, int page_idx, int need_send_signal)
 {
     RDMALocalBlock *block;
     uint8_t *host_addr;
@@ -5001,7 +5001,7 @@ static int smc_pml_do_prefetch_page(RDMAContext *rdma, SMCInfo *smc_info,
     nb_page_fetched++;
     smc_pml_prefetched_map_insert(smc_info, page->block_offset + page->offset, 
                                   nb_page_fetched);
-    ret = smc_rdma_read(rdma, block, page->offset, page->size, page_idx, NO_NEED_SEND_SIGNAL);
+    ret = smc_rdma_read(rdma, block, page->offset, page->size, page_idx, need_send_signal);
     SMC_LOG(DEL, "Slave prefetch page %lu", 
                     (page->block_offset >> 12) + (page->offset >> 12));
     return ret;
@@ -5093,6 +5093,9 @@ static int smc_do_prefetch_dirty_pages(RDMAContext *rdma, SMCInfo *smc_info,
     return cmd;
 }
 
+#define SMC_PML_SIGNAL_RATE 50
+#define SMC_PML_CHECK_RATE (SMC_PML_SIGNAL_RATE + 3)
+
 /* Prefetch as many as possible pages from the src.
  * @complete_pages: num of the actual prefetched pages;
  * return 0, nothing happened but prefetching pages;
@@ -5111,6 +5114,8 @@ static int smc_pml_do_prefetch_dirty_pages(RDMAContext *rdma, SMCInfo *smc_info,
     int idx;
     int nb_subsets;
     int nb_eles;
+    int nb_signal = 0;
+    int need_send_signal;
 
     *complete_pages = 0;
     idx = 0;
@@ -5121,15 +5126,19 @@ static int smc_pml_do_prefetch_dirty_pages(RDMAContext *rdma, SMCInfo *smc_info,
     while (idx < nb_eles) {
         prefetch_page = smc_pml_prefetch_pages_get_idex(smc_info, nb_subsets, idx);
         SMC_ASSERT(prefetch_page);
-        ret = smc_pml_do_prefetch_page(rdma, smc_info, prefetch_page, idx);
+        if (idx % SMC_PML_SIGNAL_RATE == 0 && idx != 0) {
+            need_send_signal = NEED_SEND_SIGNAL;
+            ++nb_signal;
+        } else {
+            need_send_signal = NO_NEED_SEND_SIGNAL;
+        }
+        // ret = smc_pml_do_prefetch_page(rdma, smc_info, prefetch_page, idx, need_send_signal);
+        ret = smc_pml_do_prefetch_page(rdma, smc_info, prefetch_page, idx, NEED_SEND_SIGNAL);
         if ( ret < 0 ) {
             return ret;
         }
-        ++nb_post;
-        ++idx;
-
         /* Decrease the frequency polling the signal from src */
-        if (nb_post % 50 == 0 && nb_post != 0) {
+        if (idx % SMC_PML_CHECK_RATE == 0 && idx != 0) {
             ret = smc_pml_try_ack_rdma_read(rdma, smc_info, false, &ack_idx);
             if (ret < 0) {
                 return ret;
@@ -5138,13 +5147,31 @@ static int smc_pml_do_prefetch_dirty_pages(RDMAContext *rdma, SMCInfo *smc_info,
                 SMC_ASSERT(signal == 0);
                 signal = ret;
                 SMC_LOG(UNSIG, "Recv signal %d", signal);
-            } else if (ack_idx != -1) {
-                SMC_LOG(UNSIG, "SHOULD NOT HAPPEN");
+            } else {
+                SMC_ASSERT(ack_idx != -1);
+                --nb_signal;
             }
 
             if (signal) {
                 break;
             }
+        }
+
+        ++nb_post;
+        ++idx;
+    }
+
+    while (nb_signal) {
+        /* Block until any WR is finished */
+        ret = smc_pml_try_ack_rdma_read(rdma, smc_info, true, &ack_idx);
+        if (ret < 0) {
+            return ret;
+        } else if (ret > 0) {
+            SMC_ASSERT(signal == 0);
+            signal = ret;
+        } else {
+            SMC_ASSERT(ack_idx != -1);
+            --nb_signal;
         }
     }
 

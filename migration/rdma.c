@@ -5095,6 +5095,7 @@ static int smc_do_prefetch_dirty_pages(RDMAContext *rdma, SMCInfo *smc_info,
 
 #define SMC_PML_SIGNAL_RATE 50
 #define SMC_PML_CHECK_RATE (SMC_PML_SIGNAL_RATE + 3)
+// #define SMC_PML_UNSIG_ON
 
 /* Prefetch as many as possible pages from the src.
  * @complete_pages: num of the actual prefetched pages;
@@ -5114,15 +5115,20 @@ static int smc_pml_do_prefetch_dirty_pages(RDMAContext *rdma, SMCInfo *smc_info,
     int idx;
     int nb_subsets;
     int nb_eles;
+#ifdef SMC_PML_UNSIG_ON 
     int nb_signal = 0;
     int need_send_signal;
+#else 
+    int nb_ack = 0;
+#endif
 
     *complete_pages = 0;
     idx = 0;
     nb_subsets = smc_info->pml_prefetch_pages.nb_subsets;
     nb_eles = smc_pml_prefetch_pages_count(smc_info, nb_subsets);
     SMC_LOG(PML, "There are %d pages which should be fetched", nb_eles);
-    
+#ifdef SMC_PML_UNSIG_ON
+    SMC_LOG(NEW_UNSIG, "using unsignal!"); 
     while (idx < nb_eles) {
         prefetch_page = smc_pml_prefetch_pages_get_idex(smc_info, nb_subsets, idx);
         SMC_ASSERT(prefetch_page);
@@ -5132,8 +5138,7 @@ static int smc_pml_do_prefetch_dirty_pages(RDMAContext *rdma, SMCInfo *smc_info,
         } else {
             need_send_signal = NO_NEED_SEND_SIGNAL;
         }
-        // ret = smc_pml_do_prefetch_page(rdma, smc_info, prefetch_page, idx, need_send_signal);
-        ret = smc_pml_do_prefetch_page(rdma, smc_info, prefetch_page, idx, NEED_SEND_SIGNAL);
+        ret = smc_pml_do_prefetch_page(rdma, smc_info, prefetch_page, idx, need_send_signal);
         if ( ret < 0 ) {
             return ret;
         }
@@ -5174,6 +5179,49 @@ static int smc_pml_do_prefetch_dirty_pages(RDMAContext *rdma, SMCInfo *smc_info,
             --nb_signal;
         }
     }
+#else 
+    SMC_LOG(NEW_UNSIG, "shut down unsignal!"); 
+    while (idx < nb_eles) {
+        prefetch_page = smc_pml_prefetch_pages_get_idex(smc_info, nb_subsets, idx);
+        SMC_ASSERT(prefetch_page);
+        ret = smc_pml_do_prefetch_page(rdma, smc_info, prefetch_page, idx, NEED_SEND_SIGNAL);
+        if ( ret < 0 ) {
+            return ret;
+        }
+        ++nb_post;
+        ++idx;
+
+        /* Wait here to see if there are any RDMA READ have completed */
+        ret = smc_pml_try_ack_rdma_read(rdma, smc_info, false, &ack_idx);
+        if (ret < 0) {
+            return ret;
+        } else if (ret > 0) {
+            /* We have recv the next prefetch signal, ret is the signal type */
+            SMC_ASSERT(signal == 0);
+            signal = ret;
+        } else if (ack_idx != -1) {
+            ++nb_ack;
+        }
+
+        if (signal) {
+            break;
+        }
+    }
+
+    while (nb_ack < nb_post) {
+        /* Block until any WR is finished */
+        ret = smc_pml_try_ack_rdma_read(rdma, smc_info, true, &ack_idx);
+        if (ret < 0) {
+            return ret;
+        } else if (ret > 0) {
+            SMC_ASSERT(signal == 0);
+            signal = ret;
+        } else {
+            SMC_ASSERT(ack_idx != -1);
+            ++nb_ack;
+        }
+    }
+#endif
 
     SMC_STAT("Fetched %d pages (But there are %d pages which should be fetched)",
              nb_post, nb_eles);

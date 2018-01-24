@@ -250,7 +250,7 @@ enum {
     NO_SET_BIT_PRINTED,
     SET_BIT_PRINTED,
 };
-static int64_t map_size;
+// static int64_t map_size;
 // static void local_print_bitmap_setbit_to_log(void)
 // {
 //     rcu_read_lock();
@@ -1154,21 +1154,22 @@ static int ram_find_and_save_block(QEMUFile *f, bool last_stage,
     return pages;
 }
 
-static void smc_pml_ram_find_and_prefetch_block(void)	
+static void smc_pml_ram_find_and_prefetch_block(void)   
 {
     RAMBlock *block;
     ram_addr_t offset;
     MemoryRegion *mr;
     bool in_checkpoint = false;
+#ifdef SMC_PML_SORT_ON
+    uint32_t total_dirty_times;
+#else 
     uint32_t nb_page_prefetched;
+#endif
 
     block = QLIST_FIRST_RCU(&ram_list.blocks);
     offset = 0;
-    /* reset pml_unsort_prefetch_pages */
-    smc_pml_unsort_prefetch_pages_reset(&glo_smc_info);
-
-    SMC_LOG(PML, "Start to find and insert prefetch pages into pml_prefetch_pages "
-            "pml_prefetch_pages.nb_subsets=%d", 
+    SMC_LOG(CHECK_LIST, "Start to find and insert dirty pages to pml_prefetch_pages "
+            "pml_prefetch_pages.nb_subsets = %d", 
             glo_smc_info.pml_prefetch_pages.nb_subsets);
 
     while (true) {
@@ -1182,6 +1183,20 @@ static void smc_pml_ram_find_and_prefetch_block(void)
                 break;
             }
         } else {
+#ifdef SMC_PML_SORT_ON            
+            total_dirty_times = smc_pml_total_prefetched_map_lookup(&glo_smc_info,
+                                                      block->offset + offset);
+            if (total_dirty_times > 0) {
+                total_dirty_times++;
+                if (total_dirty_times > SMC_PML_TOTAL_MAX_DIRTY_TIMES) {
+                    total_dirty_times = SMC_PML_TOTAL_MAX_DIRTY_TIMES;
+                }
+            } else {
+                total_dirty_times = 1;
+            }
+            smc_pml_total_prefetched_map_insert(&glo_smc_info, block->offset + offset,
+                                          total_dirty_times);
+#else 
             nb_page_prefetched = smc_pml_prefetched_map_lookup(&glo_smc_info,
                                                       block->offset + offset);
             if (nb_page_prefetched > 0) {
@@ -1189,18 +1204,19 @@ static void smc_pml_ram_find_and_prefetch_block(void)
             } else {
                 nb_page_prefetched = 1;
             }
-            smc_pml_unsort_prefetch_pages_insert(&glo_smc_info, block->offset,
-                                                 offset, in_checkpoint, 
-                                                 TARGET_PAGE_SIZE, 
-                                                 nb_page_prefetched);
             smc_pml_prefetched_map_insert(&glo_smc_info, block->offset + offset,
                                           nb_page_prefetched);
+#endif
+            smc_pml_unsort_prefetch_pages_insert(&glo_smc_info, block->offset,
+                                         offset, in_checkpoint, 
+                                         TARGET_PAGE_SIZE, 
+                                         glo_smc_info.pml_prefetch_pages.nb_subsets);
         }    
     }
-
-    /* sort this pages and insert them into pml_prefetch_pages */
+    /* sort the pages inserted into pml_prefetch_pages */
+    // SMC_LOG(SORT, "after smc_pml_unsort_prefetch_pages_insert before smc_pml_sort_prefetch_pages");
     smc_pml_sort_prefetch_pages(&glo_smc_info);
-}	
+}
 
 /* Set the corresponding bit in migration_bitmap through the page offset */
 void smc_pml_set_bitmap_through_offset(uint64_t block_offset,
@@ -1255,7 +1271,7 @@ static void smc_pml_prefetch_qemu_bitmap_sync(void)
         smc_pml_prefetch_bitmap_sync_range(block->mr->ram_addr, block->used_length);
     }
     rcu_read_unlock();
-    SMC_LOG(PML, "Get %" PRIu64 " dirty pages in total", smc_pml_prefetch_pages);
+    //SMC_LOG(SORTPY, "Get %" PRIu64 " dirty pages in total", smc_pml_prefetch_pages);
 
     smc_pml_ram_find_and_prefetch_block();
     //SMC_LOG(PML, "After synchronization the smc_pml_prefetch_pages should be 0,"
@@ -1566,7 +1582,7 @@ static int ram_save_complete(QEMUFile *f, void *opaque)
 
     migration_bitmap_sync();
     
-    SMC_LOG(SIM, "migration_dirty_pages(unprefetched) = %" PRIu64 "", migration_dirty_pages);
+    SMC_LOG(PREFETCH_SUM, "migration_dirty_pages(unprefetched) = %" PRIu64 "", migration_dirty_pages);
 
     if (migration_dirty_pages == 0) {
         /* get zero page in this checkpoint, 

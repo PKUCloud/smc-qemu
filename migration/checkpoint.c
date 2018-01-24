@@ -1133,6 +1133,12 @@ static void *mc_thread(void *opaque)
              */
             glo_smc_info.enable_incheckpoint_bitmap = true;
         }
+#ifdef SMC_PML_SORT_ON
+        if (!(s->checkpoints % SMC_PML_CLR_TOTAL_MAP_RDS) && (s->checkpoints)) {
+            smc_pml_total_prefetched_map_reset(&glo_smc_info);
+            SMC_LOG(OLD_SORT, "Clear the total dirty map every 1000 checkpoints.");
+        }
+#endif
 #endif
         slab = mc_slab_start(&mc);
         mc_copy_start(&mc);
@@ -1411,6 +1417,8 @@ static void *mc_thread(void *opaque)
         } else {
             fetch_time = 0;
         }
+        SMC_LOG(SORT, "send checkpoint #%" PRId64, s->checkpoints);
+        SMC_LOG(SORTPY, "send checkpoint #%" PRId64, s->checkpoints);
         SMC_LOG(GEN, "[SMC]bytes %ld xmit_time %" PRId64 " downtime %" PRIu64
                 " ram_copy_time %" PRId64 " wait_time %" PRIu64
                 " fetch_speed %d fetch_time %" PRId64
@@ -1515,6 +1523,9 @@ static MCCopyset *mc_copy_next(MCParams *mc, MCCopyset *copyset)
 
     return copyset;
 }
+#ifdef DEBUG_SMC
+static int64_t recv_checpoints = 0;
+#endif
 
 void mc_process_incoming_checkpoints_if_requested(QEMUFile *f)
 {
@@ -1723,7 +1734,7 @@ void mc_process_incoming_checkpoints_if_requested(QEMUFile *f)
             smc_pml_prefetch_pages_reset(&glo_smc_info);
             smc_pml_backup_pages_reset(&glo_smc_info);
             smc_pml_prefetched_map_reset(&glo_smc_info);
-            SMC_LOG(DEL, "~~~ Slave begin prefetch ~~~");
+            // SMC_LOG(SORT, "~~~ Slave begin prefetch ~~~");
             while (true) {
                 nb_recv_prefetch_pages = smc_pml_recv_prefetch_info(f_opaque,
                                                                 &glo_smc_info);
@@ -1745,15 +1756,21 @@ void mc_process_incoming_checkpoints_if_requested(QEMUFile *f)
                 smc_set_state(&glo_smc_info, SMC_STATE_PREFETCH_DONE);
                 smc_pml_prefetch_pages_next_subset(&glo_smc_info);
             }
-            SMC_LOG(DEL, "~~~ Slave prefetch done ~~~");
+            // SMC_LOG(SORT, "~~~ Slave prefetch done ~~~");
             
             for (int i = 0; i <= glo_smc_info.pml_prefetch_pages.nb_subsets; i++) {
-                    SMC_LOG(PML, "pml_round_prefetch_info[%d]: nb_pages=%" PRIu64
+                    SMC_LOG(SORT, "pml_round_prefetch_info[%d]: nb_pages=%" PRIu64
                             " prefetch_time=%" PRIu64, i, 
                             glo_smc_info.pml_round_prefetch_info[i].nb_pages,
                             glo_smc_info.pml_round_prefetch_info[i].prefetch_time);
+
+
+                    //SMC_LOG(SORTPY, "Round %d: prefetch=%" PRIu64, i, 
+                    //        glo_smc_info.pml_round_prefetch_info[i].nb_pages);
             }
 
+            SMC_LOG(SORT, "checkpoint #%" PRId64, ++recv_checpoints);
+            SMC_LOG(SORTPY, "checkpoint #%" PRId64, ++recv_checpoints);
             /* Send the number of the prefetched pages in each round to the src */
             ret = smc_pml_send_round_prefetched_num(f_opaque, &glo_smc_info);
             if (ret < 0) {
@@ -1764,7 +1781,7 @@ void mc_process_incoming_checkpoints_if_requested(QEMUFile *f)
 #endif
 
 apply_checkpoint:
-            SMC_LOG(PML, "start applying checkpoint.");
+            // SMC_LOG(SORT, "start applying checkpoint.");
             mc.curr_slab = QTAILQ_FIRST(&mc.slab_head);
             mc.slab_total = checkpoint_size;
 

@@ -4092,6 +4092,9 @@ static void print_linked_list(uint8_t *list) {
     uint16_t list_idx = *p_head_idx;
     SMCPMLPrefetchPage *pages = (SMCPMLPrefetchPage *)(list + 2);
     SMCPMLPrefetchPage *cur_page;
+    // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    // can not use SMC_MAX_PREFETCH_OFFSET to denote the end of a list anymore
+    // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     while (list_idx != SMC_MAX_PREFETCH_OFFSET) {
         cur_page = pages + list_idx;
         SMC_LOG(SORT, "list_idx is %u", (uint32_t)list_idx);
@@ -4135,7 +4138,6 @@ int smc_pml_send_prefetch_info(void *opaque, SMCInfo *smc_info)
     int nb_pages;
     int pages_to_send;
     int nb_subsets;
-    int tmp_sum;
     /* MAX_NB_PAGES is 21844, SMC_NUM_DIRTY_PAGES_SEND is 16351, and we constraint
      * the num of pages to be prefetched less than SMC_NUM_DIRTY_PAGES_SEND, so there
      * will be only one single massage.
@@ -4146,13 +4148,11 @@ int smc_pml_send_prefetch_info(void *opaque, SMCInfo *smc_info)
 
     nb_subsets = smc_info->pml_prefetch_pages.nb_subsets;
 
-    tmp_sum = smc_pml_prefetch_pages_count(smc_info, nb_subsets);
-    if (tmp_sum >= SMC_PML_PREFETCH_CAP) {
-        SMC_LOG(SORTPY, "TOO MANY (%d) prefetch pages info !", tmp_sum);
-    }
-    tmp_sum = tmp_sum > SMC_PML_PREFETCH_CAP ? SMC_PML_PREFETCH_CAP : tmp_sum;
-    
-    nb_pages = min(tmp_sum, SMC_NUM_DIRTY_PAGES_SEND);
+    nb_pages = smc_pml_prefetch_pages_count(smc_info, nb_subsets);
+    /* If there are too many pages which should be prefetched, 
+     * we only deal first SMC_PML_PREFETCH_CAP pages.
+     */
+    nb_pages = nb_pages > SMC_PML_PREFETCH_CAP ? SMC_PML_PREFETCH_CAP : nb_pages;
 #ifdef SMC_PML_SORT_ON
     prefetch_pages_with_head = smc_pml_prefetch_pages_info(smc_info);
     head.padding = nb_pages * sizeof(SMCPMLPrefetchPage) + 2;
@@ -4185,8 +4185,8 @@ int smc_pml_send_prefetch_info(void *opaque, SMCInfo *smc_info)
         }
 
         SMC_LOG(SORT, "send prefetch info #%" PRIu64, smc_pml_send_cnt++);
-        SMC_LOG(SORT, "head.padding: %d, head.len: %d, pages_to_send: %d, pages should send: %d", 
-            head.padding, head.len, pages_to_send, tmp_sum);
+        SMC_LOG(SORT, "head.padding: %d, head.len: %d, pages_to_send: %d", 
+            head.padding, head.len, pages_to_send);
 
         SMC_LOG(SORTPY, "send prefetch info #%" PRIu64, smc_pml_send_cnt++);
         //SMC_LOG(SORTPY, "head.padding: %d, head.len: %d, pages_to_send: %d", 

@@ -510,33 +510,109 @@ void smc_pml_unsort_prefetch_pages_insert(SMCInfo *smc_info,
 void smc_pml_sort_prefetch_pages(SMCInfo *smc_info)
 {
     SMCSet *subset;
+    uint8_t *eles;
     uint16_t *p_head_idx;
-    SMCPMLPrefetchPage *last_ele;
+    uint16_t first_idx, second_idx;
+    uint32_t interval = 1;
+    SMCPMLPrefetchPage temp;
+    SMCPMLPrefetchPage *pre;
+    SMCPMLPrefetchPage *pages;
+
+    uint32_t i;
+    uint32_t fvisit = 0, svisit = 0;
+    uint64_t block_offset1, block_offset2;
+    uint64_t offset1, offset2;
+    uint32_t total_dirty_times1, total_dirty_times2;
+
+    int num_to_sort;
+
+    temp.next = 0;
+
     subset = (SMCSet *)smc_superset_get_idex(&(smc_info->pml_prefetch_pages), 
                         smc_info->pml_prefetch_pages.nb_subsets);
-    p_head_idx = (uint16_t *)(subset->eles);
+    eles = subset->eles;
+    p_head_idx = (uint16_t *)eles;
+    *p_head_idx = 0;
+    pages = (SMCPMLPrefetchPage *)(eles + 2);
+
     if (subset->nb_eles == 0) {
-        *p_head_idx = SMC_MAX_PREFETCH_OFFSET;
         return;
-    } else {
-        *p_head_idx = 0;
-        last_ele = (SMCPMLPrefetchPage *)(subset->eles + 2 +
-                                     (subset->nb_eles - 1) * subset->ele_size);
-        last_ele->next = SMC_MAX_PREFETCH_OFFSET;
-        // SMCPMLPrefetchPage *first_ele;
-        // first_ele = (SMCPMLPrefetchPage *)(subset->eles + 2);
-        // SMC_LOG(SORT, "the first pointer is %p, the last pointer is %p, nb_eles is %d",
-        //     first_ele, last_ele, subset->nb_eles);
-        // SMC_LOG(SORT, "the first page block_offset=%" PRIu64 " offset=%" PRIu64
-        //    " size=%" PRIu32 " in_checkpoint=%d next is %u", first_ele->block_offset,
-        //    first_ele->offset, first_ele->size, first_ele->in_checkpoint, 
-        //    (uint32_t)(first_ele->next));        
-        
-        // SMC_LOG(SORTPY, "the last is %d the last page block_offset=%" PRIu64 " offset=%" PRIu64
-        //    " size=%" PRIu32 " in_checkpoint=%d next is %u", subset->nb_eles, last_ele->block_offset,
-        //    last_ele->offset, last_ele->size, last_ele->in_checkpoint, 
-        //    (uint32_t)(last_ele->next));
     }
+
+    num_to_sort = (subset->nb_eles <= SMC_PML_PREFETCH_CAP) ? subset->nb_eles : 
+                    SMC_PML_PREFETCH_CAP;
+
+    // SMC_LOG(REALSORT, "subset->nb_eles is %d, num_to_sort is %d", subset->nb_eles,
+    //     num_to_sort);
+
+    // Merge Sort begins.
+    for (; interval <= num_to_sort; interval *= 2) {
+        pre = &temp;
+        first_idx = pre->next;
+        second_idx = pre->next;
+
+        while (first_idx != num_to_sort || second_idx != num_to_sort) {
+            i = 0;
+            while (i < interval && second_idx != num_to_sort) {
+                second_idx = pages[second_idx].next;
+                i++;
+            }
+            fvisit = 0, svisit = 0;
+            while (fvisit < interval && svisit < interval && 
+                    first_idx != num_to_sort && second_idx != num_to_sort) {
+                block_offset1 = pages[first_idx].block_offset;
+                offset1 = pages[first_idx].offset;
+                block_offset2 = pages[second_idx].block_offset;
+                offset2 = pages[second_idx].offset;
+                total_dirty_times1 = smc_pml_total_prefetched_map_lookup(&glo_smc_info,
+                                                                  block_offset1 + offset1);
+                total_dirty_times2 = smc_pml_total_prefetched_map_lookup(&glo_smc_info,
+                                                                  block_offset2 + offset2);
+                if (total_dirty_times1 < total_dirty_times2) {
+                    pre->next = first_idx;
+                    pre = &(pages[first_idx]);
+                    first_idx = pages[first_idx].next;
+                    fvisit++;
+                } else {
+                    pre->next = second_idx;
+                    pre = &(pages[second_idx]);
+                    second_idx = pages[second_idx].next;
+                    svisit++;
+                }
+            }
+            while (fvisit < interval && first_idx != num_to_sort) {
+                pre->next = first_idx;
+                pre = &(pages[first_idx]);
+                first_idx = pages[first_idx].next;
+                fvisit++;
+            }
+            while (svisit < interval && second_idx != num_to_sort) {
+                pre->next = second_idx;
+                pre = &(pages[second_idx]);
+                second_idx = pages[second_idx].next;
+                svisit++;
+            }
+            pre->next = second_idx;
+            first_idx = second_idx;
+        }
+    }
+
+    *p_head_idx = temp.next;
+
+    // SMCPMLPrefetchPage *first_ele;
+    // first_ele = (SMCPMLPrefetchPage *)(subset->eles + 2);
+    // SMC_LOG(SORT, "the first pointer is %p, the last pointer is %p, nb_eles is %d",
+    //     first_ele, last_ele, subset->nb_eles);
+    // SMC_LOG(SORT, "the first page block_offset=%" PRIu64 " offset=%" PRIu64
+    //    " size=%" PRIu32 " in_checkpoint=%d next is %u", first_ele->block_offset,
+    //    first_ele->offset, first_ele->size, first_ele->in_checkpoint, 
+    //    (uint32_t)(first_ele->next));        
+    
+    // SMC_LOG(SORTPY, "the last is %d the last page block_offset=%" PRIu64 " offset=%" PRIu64
+    //    " size=%" PRIu32 " in_checkpoint=%d next is %u", subset->nb_eles, last_ele->block_offset,
+    //    last_ele->offset, last_ele->size, last_ele->in_checkpoint, 
+    //    (uint32_t)(last_ele->next));
+    
     // SMC_LOG(SORT, "after sort");
     // smc_print_linked_list(subset);
 }

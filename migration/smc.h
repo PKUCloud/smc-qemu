@@ -28,7 +28,6 @@
 #define SMC_NUM_DIRTY_PAGES_SEND        16351
 // #define SMC_NUM_DIRTY_PAGES_SEND        3000
 #ifdef SMC_PML_SORT_ON
-#define SMC_MAX_PREFETCH_OFFSET         65535
 #define SMC_PML_PREFETCH_CAP            (SMC_NUM_DIRTY_PAGES_SEND - 3000)
 #endif
 

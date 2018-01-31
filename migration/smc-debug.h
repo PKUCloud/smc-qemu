@@ -2,8 +2,8 @@
 #define _MIGRATION_SMC_DEBUG_H
 #include <stdio.h>
 
-// #define DEBUG_SMC
-// #define STAT_SMC
+//#define DEBUG_SMC
+//#define STAT_SMC
 
 extern FILE *smc_log_file;
 
@@ -19,7 +19,9 @@ enum {
 // static int smc_dbflags = SMC_DBBIT(FREE) | SMC_DBBIT(SORT);
 // static int smc_dbflags = SMC_DBBIT(CHECK_LIST);
 // static int smc_dbflags = SMC_DBBIT(SORTPY);
-static int smc_dbflags = SMC_DBBIT(REALSORT);
+// static int smc_dbflags = SMC_DBBIT(REALSORT);
+//static int smc_dbflags = SMC_DBBIT(RSR);
+
 
 #define SMC_LOG(what, fmt, ...) do { \
     if (smc_dbflags & SMC_DBBIT(what)) { \

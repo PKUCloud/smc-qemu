@@ -5011,7 +5011,7 @@ static int smc_pml_try_ack_rdma_read(RDMAContext *rdma, SMCInfo *smc_info,
 
         SMC_ASSERT((head.type == SMC_PML_RDMA_CONTROL_STOP_PREFETCH) || 
                    (head.type == SMC_PML_RDMA_CONTROL_NEXT_PREFETCH));
-        SMC_LOG(PML, "recv prefetch signal=%d while prefetching pages", head.type);
+        //SMC_LOG(PML, "recv prefetch signal=%d while prefetching pages", head.type);
         return head.type;
     }
 
@@ -5196,9 +5196,9 @@ static int smc_do_prefetch_dirty_pages(RDMAContext *rdma, SMCInfo *smc_info,
     return cmd;
 }
 
-#define SMC_PML_SIGNAL_RATE 50
-#define SMC_PML_CHECK_RATE (SMC_PML_SIGNAL_RATE + 3)
-// #define SMC_PML_UNSIG_ON
+#define SMC_PML_SIGNAL_RATE 40
+#define SMC_PML_CHECK_RATE 100
+#define SMC_PML_UNSIG_ON
 
 #ifdef SMC_PML_SORT_ON
 static void *smc_pml_superset_get_idex(SMCSuperSet *smc_superset, 
@@ -5216,7 +5216,6 @@ static void *smc_pml_superset_get_idex(SMCSuperSet *smc_superset,
  * return positive, recv the prefetch signal while prefetching, complete
  * current prefetched pages, and return the prefetch signal type.
  */
-static int print_cnt = 0;
 static int smc_pml_do_prefetch_dirty_pages(RDMAContext *rdma, SMCInfo *smc_info,
                                        int *complete_pages)
 {
@@ -5228,8 +5227,8 @@ static int smc_pml_do_prefetch_dirty_pages(RDMAContext *rdma, SMCInfo *smc_info,
     int nb_eles;
 
 #ifdef SMC_PML_UNSIG_ON 
-    int nb_signal = 0;
-    int need_send_signal;
+    //int nb_signal = 0;
+    //int need_send_signal;
 #else 
     int nb_ack = 0;
 #endif
@@ -5262,18 +5261,13 @@ static int smc_pml_do_prefetch_dirty_pages(RDMAContext *rdma, SMCInfo *smc_info,
 #if defined(SMC_PML_UNSIG_ON) 
     while (subset_idx < nb_eles) {
 #if !defined(SMC_PML_SORT_ON)
-        if (print_cnt++ == 0) {
-            SMC_LOG(SORT, "UNSIG ON SORT OFF");
-        }
         prefetch_page = smc_pml_prefetch_pages_get_idex(smc_info, superset_idx, subset_idx);
 #else
-        if (print_cnt++ == 0) {
-            SMC_LOG(SORT, "UNSIG ON SORT ON");
-        }
         prefetch_page = pages + list_idx;
         list_idx = prefetch_page->next;
 #endif
         SMC_ASSERT(prefetch_page);
+        /*
         if (!(subset_idx % SMC_PML_SIGNAL_RATE) && subset_idx) {
             need_send_signal = NEED_SEND_SIGNAL;
             ++nb_signal;
@@ -5281,6 +5275,8 @@ static int smc_pml_do_prefetch_dirty_pages(RDMAContext *rdma, SMCInfo *smc_info,
             need_send_signal = NO_NEED_SEND_SIGNAL;
         }
         ret = smc_pml_do_prefetch_page(rdma, smc_info, prefetch_page, subset_idx, need_send_signal);
+        */
+        ret = smc_pml_do_prefetch_page(rdma, smc_info, prefetch_page, subset_idx, NO_NEED_SEND_SIGNAL);
         if ( ret < 0 ) {
             return ret;
         }
@@ -5295,18 +5291,15 @@ static int smc_pml_do_prefetch_dirty_pages(RDMAContext *rdma, SMCInfo *smc_info,
                 signal = ret;
                 SMC_LOG(UNSIG, "Recv signal %d", signal);
                 break;
-            } else {
-                SMC_ASSERT(ack_idx != -1);
-                --nb_signal;
             }
         }
 
         ++nb_post;
         ++subset_idx;
     }
-
+    /*
     while (nb_signal) {
-        /* Block until any WR is finished */
+        // Block until any WR is finished
         ret = smc_pml_try_ack_rdma_read(rdma, smc_info, true, &ack_idx);
         if (ret < 0) {
             return ret;
@@ -5318,35 +5311,15 @@ static int smc_pml_do_prefetch_dirty_pages(RDMAContext *rdma, SMCInfo *smc_info,
             --nb_signal;
         }
     }
+    */
 #endif
 
 #if !defined(SMC_PML_UNSIG_ON) 
     while (subset_idx < nb_eles) {
 #if !defined(SMC_PML_SORT_ON)
-        if (print_cnt++ == 0) {
-            SMC_LOG(SORT, "UNSIG OFF SORT ON");
-        }
-        // SMC_LOG(SORT, "shut down unsignal and no sort.");
         prefetch_page = smc_pml_prefetch_pages_get_idex(smc_info, superset_idx, subset_idx);
 #else
-        if (print_cnt++ == 0) {
-            SMC_LOG(SORT, "UNSIG OFF SORT ON");
-        }
-        // SMC_LOG(SORT, "the list_idx is %u", (uint32_t)list_idx);
         prefetch_page = pages + list_idx;
-
-        //SMC_LOG(SORT, "we prefetch a page, list_idx is %u, "
-        //        " block_offset=%" PRIu64 " offset=%" PRIu64
-        //        " size=%" PRIu32 " in_checkpoint=%d next is %u", (uint32_t)list_idx, 
-        //        prefetch_page->block_offset, prefetch_page->offset, prefetch_page->size, 
-        //        prefetch_page->in_checkpoint, (uint32_t)(prefetch_page->next));
-
-        //SMC_LOG(SORTPY, "list_idx is %u, "
-        //        " block_offset %" PRIu64 " offset %" PRIu64
-        //        " size %" PRIu32 " in_checkpoint %d next is %u", (uint32_t)list_idx, 
-        //        prefetch_page->block_offset, prefetch_page->offset, prefetch_page->size, 
-        //        prefetch_page->in_checkpoint, (uint32_t)(prefetch_page->next));
-
         list_idx = prefetch_page->next;
 #endif
         SMC_ASSERT(prefetch_page);

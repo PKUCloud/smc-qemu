@@ -14,11 +14,6 @@
 //#define SMC_PREFETCH
 #define SMC_PML_PREFETCH
 
-#ifdef SMC_PML_PREFETCH
-/* for sort dirty pages */
-#define SMC_PML_SORT_ON
-#endif
-
 #define SMC_DIRTY_FLAGS_IN_CHECKPOINT   0x1U
 
 #define SMC_PREFETCH_RECV_TIME          2
@@ -27,9 +22,7 @@
  */
 #define SMC_NUM_DIRTY_PAGES_SEND        16351
 // #define SMC_NUM_DIRTY_PAGES_SEND        3000
-#ifdef SMC_PML_SORT_ON
 #define SMC_PML_PREFETCH_CAP            (SMC_NUM_DIRTY_PAGES_SEND - 3000)
-#endif
 
 #define SMC_PML_PREFETCH_ROUND          5
 /* default checkpoint frequency */
@@ -52,9 +45,8 @@ typedef struct SMCPMLPrefetchPage {
     /* Offset inside the RAMBlock which contains the page */
     uint64_t offset;
     uint32_t size;
-#ifdef SMC_PML_SORT_ON
+    /* point to next element in the PrefetchPage linked list */
     uint16_t next;
-#endif
     bool in_checkpoint;
 } SMCPMLPrefetchPage;
 
@@ -109,7 +101,11 @@ typedef struct SMCPMLPrefetchedPageCounter {
 } SMCPMLPrefetchedPageCounter;
 
 typedef struct SMCPMLRoundPrefetchInfo{
-    uint64_t nb_pages;
+    //the number of pages that has been prefetched
+    uint32_t nb_pages;
+    //the idx of the fisrt page that has not been prefetched yet
+    uint32_t list_idx;
+    // prefetch time
     uint64_t prefetch_time;
 } SMCPMLRoundPrefetchInfo;
 
@@ -123,10 +119,9 @@ typedef struct SMCPMLRoundPrefetchInfo{
 #define SMC_FETCH_CACHE_SOFT_CAP        3000
 #define SMC_PML_PREFETCH_ROUND_LIMIT    100
 
-#ifdef SMC_PML_SORT_ON
 #define SMC_PML_TOTAL_MAX_DIRTY_TIMES   (1 << 31)
 #define SMC_PML_CLR_TOTAL_MAP_RDS       (5000 / MC_DEFAULT_CHECKPOINT_FREQ_MS)
-#endif
+
 
 typedef struct SMCInfo {
     bool init;
@@ -145,10 +140,8 @@ typedef struct SMCInfo {
     SMCSet pml_backup_pages;
     /* Used to find whether a given page has been prefetched before */
     GHashTable *pml_prefetched_map;
-#ifdef SMC_PML_SORT_ON
-    /* Used to store the total dirty times of a page */
+    /* Used to store the total dirty times of a page (for sort them)*/
     GHashTable *pml_total_prefetched_map;
-#endif
     int state;
     bool need_rollback;
     void *opaque;   /* QEMUFileRDMA */
@@ -158,10 +151,6 @@ typedef struct SMCInfo {
     //bool need_clear_incheckpoint_bitmap;
     /* store the prefetched info of each round */
     SMCPMLRoundPrefetchInfo  pml_round_prefetch_info[SMC_PML_PREFETCH_ROUND_LIMIT];
-#ifndef SMC_PML_SORT_ON
-    /* store the prefetched pages' info temporary when we sorting them */
-    SMCSuperSet pml_unsort_prefetch_pages;
-#endif
     /* dirty page transmission speed (pages per millisecond) */
     double pml_xmit_speed;
     bool early_flush_buffer;
@@ -186,9 +175,6 @@ void smc_pml_unsort_prefetch_pages_insert(SMCInfo *smc_info,
 void smc_pml_sort_prefetch_pages(SMCInfo *smc_info);
 void smc_pml_prefetch_pages_next_subset(SMCInfo *smc_info);
 void smc_pml_prefetch_pages_reset(SMCInfo *smc_info);
-#ifndef SMC_PML_SORT_ON
-void smc_pml_unsort_prefetch_pages_reset(SMCInfo *smc_info);
-#endif
 void smc_pml_prefetch_pages_insert_from_buf(SMCInfo *smc_info, 
                                      const void *buf, int nb_pages);
 void smc_dirty_pages_reset(SMCInfo *smc_info);
@@ -228,6 +214,9 @@ void *smc_backup_pages_insert_empty(SMCInfo *smc_info, uint64_t block_offset,
 void *smc_pml_backup_pages_insert_empty(SMCInfo *smc_info, uint64_t block_offset,
                                     uint64_t offset, uint64_t size,
                                     uint8_t *host_addr);
+void smc_pml_record_round_prefetch_info(SMCInfo *smc_info,
+                                    int nb_subsets, uint32_t nb_pages,
+                                    uint32_t list_idx, uint64_t prefetch_time);
 
 void smc_backup_pages_reset(SMCInfo *smc_info);
 void smc_pml_backup_pages_reset(SMCInfo *smc_info);
@@ -245,11 +234,7 @@ uint8_t *smc_host_addr_from_offset(void *opaque, uint64_t block_offset,
 void smc_prefetch_map_gen_from_pages(SMCInfo *smc_info);
 void smc_update_prefetch_cache(SMCInfo *smc_info);
 int smc_load_page_stub(QEMUFile *f, void *opaque, void *host_addr, long size);
-#ifdef SMC_PML_SORT_ON
 uint8_t *smc_pml_prefetch_pages_info(SMCInfo *smc_info);
-#else
-SMCPMLPrefetchPage *smc_pml_prefetch_pages_info(SMCInfo *smc_info);
-#endif
 SMCPMLPrefetchPage *smc_pml_prefetch_pages_get_idex(SMCInfo *smc_info,
                                              int superset_idx, int subset_idx);
 int smc_pml_prefetch_pages_count(SMCInfo *smc_info, int superset_idx);
@@ -297,12 +282,10 @@ static inline void smc_pml_prefetched_map_reset(SMCInfo *smc_info)
     g_hash_table_remove_all(smc_info->pml_prefetched_map);
 }
 
-#ifdef SMC_PML_SORT_ON
 static inline void smc_pml_total_prefetched_map_reset(SMCInfo *smc_info)
 {
     g_hash_table_remove_all(smc_info->pml_total_prefetched_map);
 }
-#endif
 
 static inline void smc_prefetch_map_insert(SMCInfo *smc_info, uint64_t phy_addr,
                                            SMCFetchPage *page)
@@ -327,7 +310,6 @@ static inline void smc_pml_prefetched_map_insert(SMCInfo *smc_info,
     //        " counter=%d", phy_addr, nb_page_prefetched);
 }
 
-#ifdef SMC_PML_SORT_ON
 static inline void smc_pml_total_prefetched_map_insert(SMCInfo *smc_info, 
                                            uint64_t phy_addr, uint32_t nb_page_prefetched)
 {
@@ -339,7 +321,6 @@ static inline void smc_pml_total_prefetched_map_insert(SMCInfo *smc_info,
     //SMC_LOG(PML, "insert to pml_prefetched_map phy_addr(offset+block_offset)=%" PRIu64 
     //        " counter=%d", phy_addr, nb_page_prefetched);
 }
-#endif
 
 static inline SMCFetchPage *smc_prefetch_map_lookup(SMCInfo *smc_info,
                                                     uint64_t phy_addr)
@@ -365,7 +346,6 @@ static inline uint32_t smc_pml_prefetched_map_lookup
     }
 }
 
-#ifdef SMC_PML_SORT_ON
 static inline uint32_t smc_pml_total_prefetched_map_lookup
                                             (SMCInfo *smc_info, uint64_t phy_addr)
 {
@@ -382,7 +362,6 @@ static inline uint32_t smc_pml_total_prefetched_map_lookup
         return 0;
     }
 }
-#endif
 
 static inline void smc_set_state(SMCInfo *smc_info, int state)
 {

@@ -12,7 +12,7 @@ enum {
     SMC_DB_GEN, SMC_DB_INIT, SMC_DB_STREAM, SMC_DB_FETCH, SMC_DB_PML, SMC_DB_SIM,
     SMC_DB_UNSIG, SMC_DB_DEL, SMC_DB_STATISTIC, SMC_DB_DIE, SMC_DB_NEW_UNSIG,
     SMC_DB_PREFETCH_SUM, SMC_DB_SORT, SMC_DB_OLD_SORT, SMC_DB_FREE, SMC_DB_CHECK_LIST,
-    SMC_DB_SORTPY, SMC_DB_REALSORT
+    SMC_DB_SORTPY, SMC_DB_REALSORT, SMC_DB_REFETCH
 };
 #define SMC_DBBIT(x)    (1 << SMC_DB_##x)
 //static int smc_dbflags = 0;
@@ -20,7 +20,7 @@ enum {
 // static int smc_dbflags = SMC_DBBIT(CHECK_LIST);
 // static int smc_dbflags = SMC_DBBIT(SORTPY);
 // static int smc_dbflags = SMC_DBBIT(REALSORT);
-//static int smc_dbflags = SMC_DBBIT(RSR);
+//static int smc_dbflags = SMC_DBBIT(REFETCH);
 
 
 #define SMC_LOG(what, fmt, ...) do { \

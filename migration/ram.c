@@ -1160,11 +1160,7 @@ static void smc_pml_ram_find_and_prefetch_block(void)
     ram_addr_t offset;
     MemoryRegion *mr;
     bool in_checkpoint = false;
-#ifdef SMC_PML_SORT_ON
     uint32_t total_dirty_times;
-#else 
-    uint32_t nb_page_prefetched;
-#endif
 
     block = QLIST_FIRST_RCU(&ram_list.blocks);
     offset = 0;
@@ -1182,8 +1178,7 @@ static void smc_pml_ram_find_and_prefetch_block(void)
             if (!block) {
                 break;
             }
-        } else {
-#ifdef SMC_PML_SORT_ON            
+        } else {         
             total_dirty_times = smc_pml_total_prefetched_map_lookup(&glo_smc_info,
                                                       block->offset + offset);
             if (total_dirty_times > 0) {
@@ -1196,17 +1191,7 @@ static void smc_pml_ram_find_and_prefetch_block(void)
             }
             smc_pml_total_prefetched_map_insert(&glo_smc_info, block->offset + offset,
                                           total_dirty_times);
-#else 
-            nb_page_prefetched = smc_pml_prefetched_map_lookup(&glo_smc_info,
-                                                      block->offset + offset);
-            if (nb_page_prefetched > 0) {
-                nb_page_prefetched++;
-            } else {
-                nb_page_prefetched = 1;
-            }
-            smc_pml_prefetched_map_insert(&glo_smc_info, block->offset + offset,
-                                          nb_page_prefetched);
-#endif
+            
             smc_pml_unsort_prefetch_pages_insert(&glo_smc_info, block->offset,
                                          offset, in_checkpoint, 
                                          TARGET_PAGE_SIZE, 

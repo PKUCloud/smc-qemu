@@ -5176,7 +5176,7 @@ static int smc_do_prefetch_dirty_pages(RDMAContext *rdma, SMCInfo *smc_info,
 }
 
 #define SMC_PML_SIGNAL_RATE 40
-#define SMC_PML_CHECK_RATE 50
+#define SMC_PML_CHECK_RATE 10
 
 static void *smc_pml_superset_get_idex(SMCSuperSet *smc_superset, 
                                         int idx)

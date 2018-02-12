@@ -1004,7 +1004,10 @@ int smc_pml_persist_unprefetched_pages(SMCInfo *smc_info)
 }
 
 uint64_t smc_pml_calculate_xmit_sleep_time(SMCInfo *smc_info, 
-                                                       uint64_t remain_time)
+                                                       uint64_t remain_time,
+                                                       int prefetch_round,
+                                                       int64_t capture_time,
+                                                       int64_t xmit_time)
 {
     int nb_subsets = (smc_info->pml_prefetch_pages.nb_subsets - 1) < 0 ? 
                      0 : smc_info->pml_prefetch_pages.nb_subsets - 1;
@@ -1012,19 +1015,34 @@ uint64_t smc_pml_calculate_xmit_sleep_time(SMCInfo *smc_info,
     uint64_t sleep_time;
     uint64_t min_prefetch_interval = (MC_DEFAULT_CHECKPOINT_FREQ_MS * 1000) / 
                      (SMC_PML_PREFETCH_ROUND + 1);
-
-    sleep_time = nb_dirty_pages * smc_info->pml_xmit_speed;
-    if (sleep_time < min_prefetch_interval) {
-        /* at most prefetch @SMC_PML_PREFETCH_ROUND round */
-        sleep_time = min_prefetch_interval;
+    int64_t negligible_time;
+    
+    if (prefetch_round == 0) {
+        /* first round */
+        sleep_time = (xmit_time > min_prefetch_interval) ? 
+                    0 : min_prefetch_interval - xmit_time;
+    } else {
+        sleep_time = nb_dirty_pages * smc_info->pml_xmit_speed;
+        if (sleep_time < min_prefetch_interval) {
+            /* at most prefetch @SMC_PML_PREFETCH_ROUND round */
+            sleep_time = min_prefetch_interval;
+        }
+        /* We should remove the capture_time from sleep_time */
+        sleep_time = (capture_time > sleep_time) ? 0 : sleep_time - capture_time;
     }
-    if (sleep_time + 100 > remain_time) {
-        /* don't have enough time to prefetch all pages */
+
+    negligible_time = SMC_PML_NEGLIGIBLE_TIME > capture_time ? 
+                      SMC_PML_NEGLIGIBLE_TIME : capture_time;
+    if (sleep_time + capture_time + negligible_time > remain_time) {
+        /* We have a little time remained, which apparently 
+         * is not enough for us to prefetch again! 
+         */
         sleep_time = remain_time;
     }
 
-    SMC_LOG(PML, "sleep_time=%" PRIu64 " remain_time=%" PRIu64,
-            sleep_time, remain_time);
+    SMC_LOG(TIME, "sleep_time=%" PRIu64 " remain_time=%" PRIu64 
+            " last_capture_time=%" PRIu64,
+            sleep_time, remain_time, capture_time);
     
     return sleep_time;
 }

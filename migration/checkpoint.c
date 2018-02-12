@@ -1052,7 +1052,6 @@ static void *mc_thread(void *opaque)
     int64_t capture_start_time;
     int64_t capture_end_time;
     int64_t capture_time;
-    int64_t temp_xmit_time;
 
     smc_init(&glo_smc_info, f_opaque);
 
@@ -1116,6 +1115,7 @@ static void *mc_thread(void *opaque)
 
     while (s->state == MIGRATION_STATUS_CHECKPOINTING) {
         int64_t start_time, xmit_start, end_time;
+        int64_t pml_xmit_start, pml_end_time, pml_xmit_time; //calculate in us
         bool commit_sent = false;
         int fetch_speed;
 #ifdef SMC_PREFETCH
@@ -1158,6 +1158,7 @@ static void *mc_thread(void *opaque)
         assert(mc.slab_total);
 
         xmit_start = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
+        pml_xmit_start = qemu_clock_get_us(QEMU_CLOCK_REALTIME);
 
         if ((ret = mc_send(s->file, MC_TRANSACTION_START) < 0)) {
             fprintf(stderr, "transaction start failed\n");
@@ -1263,6 +1264,7 @@ static void *mc_thread(void *opaque)
         }
 #endif
         end_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
+        pml_end_time = qemu_clock_get_us(QEMU_CLOCK_REALTIME);
 
 #ifdef SMC_PREFETCH
         nr_dirty_pages = smc_dirty_pages_count(&glo_smc_info);
@@ -1327,22 +1329,18 @@ static void *mc_thread(void *opaque)
         prefetch_round = 0;
         capture_time = 0;
         //TODO: remain_time = freq_ms - s->xmit_time, but we may get 0 remain time!
-        remain_time = remain_time * 1000;
-        SMC_LOG(PML, "--------------------------------"
-                "We have %" PRIu64 " microseconds remains."
-                "--------------------------------", remain_time);
+        pml_xmit_time = pml_end_time - pml_xmit_start;
+        remain_time =  (pml_xmit_time <= freq_ms * 1000) ? (freq_ms * 1000 - pml_xmit_time) : 0;
+        SMC_LOG(TIME, "--------------------------------"
+                "We have %" PRIu64 " microseconds remains. (pml_xmit_time = %"PRIu64")"
+                "--------------------------------", remain_time, pml_xmit_time);
 
         while (true) {
-            wait_time = smc_pml_calculate_xmit_sleep_time(&glo_smc_info, remain_time);
-            if (prefetch_round == 0) {
-                //s->xmit_time: ms; wait_time, remain_time: us.
-                temp_xmit_time  = s->xmit_time * 1000;
-                wait_time = (temp_xmit_time > wait_time) ? 0 : (wait_time - temp_xmit_time);
-            } else {
-                wait_time = (capture_time > wait_time) ? 0 : wait_time - capture_time;
-            }
+            wait_time = smc_pml_calculate_xmit_sleep_time(&glo_smc_info, remain_time,
+                                                          prefetch_round, capture_time,
+                                                          pml_xmit_time);
             remain_time -= wait_time;
-            SMC_LOG(PML, "===============================" 
+            SMC_LOG(TIME, "===============================" 
                     "let VM run %" PRIu64 " microseconds"
                     "==============================="
                     "remain_time = %" PRIu64,
@@ -1351,9 +1349,10 @@ static void *mc_thread(void *opaque)
                 g_usleep(wait_time);
             }
             if (remain_time <= 0) {
+                /* We have no time remained to prefetch again */
                 if (!prefetch_round) {
-                    /* Have no time to prefetch, so send an empty prefetch info first,
-                     * then send stop signal.
+                    /* Have no time to prefetch in first round, so send an empty
+                     * prefetch info first, then send stop signal.
                      */
                     smc_pml_send_empty_prefetch_info(f_opaque, &glo_smc_info);
                     smc_pml_prefetch_pages_next_subset(&glo_smc_info);
@@ -1416,7 +1415,7 @@ static void *mc_thread(void *opaque)
         } else {
             fetch_time = 0;
         }
-        SMC_LOG(SORT, "send checkpoint #%" PRId64, s->checkpoints);
+        SMC_LOG(RSR, "send checkpoint #%" PRId64, s->checkpoints);
         SMC_LOG(REFETCH, "===========send checkpoint #%" PRId64 "============", s->checkpoints);
         SMC_LOG(GEN, "[SMC]bytes %ld xmit_time %" PRId64 " downtime %" PRIu64
                 " ram_copy_time %" PRId64 " wait_time %" PRIu64
@@ -1448,10 +1447,10 @@ static void *mc_thread(void *opaque)
             // glo_smc_info.stat_nb_epochs_per_5sec = 0;
             // glo_smc_info.stat_nb_unprefetched_pages_per_5sec = 0;
             // for calc per epoch and per 5 seconds dirty pages 
-            printf("[SMC]checkpoints %" PRId64 ", transfered pages %lu\n", 
-                s->checkpoints,
-                glo_smc_info.stat_nb_unprefetched_pages_per_5sec);
-            initial_time = end_time;
+            //printf("[SMC]checkpoints %" PRId64 ", transfered pages %lu\n", 
+            //    s->checkpoints,
+            //    glo_smc_info.stat_nb_unprefetched_pages_per_5sec);
+            //initial_time = end_time;
 
         }
     }

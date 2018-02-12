@@ -27,6 +27,8 @@
 #define SMC_PML_PREFETCH_ROUND          5
 /* default checkpoint frequency */
 #define MC_DEFAULT_CHECKPOINT_FREQ_MS   5
+/* time that we can ignore (microsecond, us) */
+#define SMC_PML_NEGLIGIBLE_TIME         MC_DEFAULT_CHECKPOINT_FREQ_MS * 100 
 
 /* Info about a dirty page within a chunk */
 typedef struct SMCDirtyPage {
@@ -244,7 +246,10 @@ void smc_pml_set_bitmap_through_offset(uint64_t block_offset,
 void smc_pml_clear_bitmap_through_offset(uint64_t block_offset,
                                                     uint64_t offset);
 uint64_t smc_pml_calculate_xmit_sleep_time(SMCInfo *smc_info, 
-                                                       uint64_t remain_time);
+                                                       uint64_t remain_time,
+                                                       int prefetch_round,
+                                                       int64_t capture_time,
+                                                       int64_t xmit_time);
 void ram_pml_clear_incheckpoint_bitmap(void);
 
 static inline int smc_dirty_pages_count(SMCInfo *smc_info)

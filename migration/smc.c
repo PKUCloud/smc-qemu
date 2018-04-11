@@ -268,6 +268,8 @@ void smc_init(SMCInfo *smc_info, void *opaque)
     smc_info->pml_xmit_speed = 0;
     
     smc_pure_set_init(&smc_info->pml_backup_pages, sizeof(SMCPMLBackupPage));
+
+    smc_info->pml_lru_timestamp = 0;
     smc_info->pml_total_prefetched_map = g_hash_table_new(g_direct_hash, g_direct_equal);
 #endif
     
@@ -413,7 +415,8 @@ void smc_pml_sort_prefetch_pages(SMCInfo *smc_info)
     uint32_t fvisit = 0, svisit = 0;
     uint64_t block_offset1, block_offset2;
     uint64_t offset1, offset2;
-    uint32_t total_dirty_times1, total_dirty_times2;
+    uint64_t lru_hash_value1, lru_hash_value2;
+    uint64_t lru_old_timestamp1, lru_old_timestamp2;
 
     int num_to_sort;
 
@@ -455,11 +458,16 @@ void smc_pml_sort_prefetch_pages(SMCInfo *smc_info)
                 offset1 = pages[first_idx].offset;
                 block_offset2 = pages[second_idx].block_offset;
                 offset2 = pages[second_idx].offset;
-                total_dirty_times1 = smc_pml_total_prefetched_map_lookup(&glo_smc_info,
+                lru_hash_value1 = smc_pml_total_prefetched_map_lookup(&glo_smc_info,
                                                                   block_offset1 + offset1);
-                total_dirty_times2 = smc_pml_total_prefetched_map_lookup(&glo_smc_info,
+                lru_old_timestamp1 = (lru_hash_value1 & SMC_PML_OLD_LRU_MASK);
+                lru_hash_value2 = smc_pml_total_prefetched_map_lookup(&glo_smc_info,
                                                                   block_offset2 + offset2);
-                if (total_dirty_times1 < total_dirty_times2) {
+                lru_old_timestamp2 = (lru_hash_value2 & SMC_PML_OLD_LRU_MASK);
+                SMC_LOG(LRU, "lru_old_timestamp1 %lu, lru_old_timestamp2 %lu", 
+                        lru_old_timestamp1, lru_old_timestamp2);
+                if (lru_old_timestamp1 < lru_old_timestamp2) {
+                    SMC_LOG(LRU, "lru_old_timestamp1 < lru_old_timestamp2");
                     pre->next = first_idx;
                     pre = &(pages[first_idx]);
                     first_idx = pages[first_idx].next;

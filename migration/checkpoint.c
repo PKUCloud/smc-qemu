@@ -1136,6 +1136,7 @@ static void *mc_thread(void *opaque)
         if (!(s->checkpoints % SMC_PML_CLR_TOTAL_MAP_RDS) && (s->checkpoints)) {
             /* Clear the total dirty map every SMC_PML_CLR_TOTAL_MAP_RDS checkpoints. */
             smc_pml_total_prefetched_map_reset(&glo_smc_info);
+            glo_smc_info.pml_lru_timestamp = 0;
             SMC_LOG(OLD_SORT, "Clear the total dirty map every 1000 checkpoints.");
         }
 #endif
@@ -1374,6 +1375,7 @@ static void *mc_thread(void *opaque)
             smc_pml_send_prefetch_info(f_opaque, &glo_smc_info);
             smc_pml_prefetch_pages_next_subset(&glo_smc_info);
             ++prefetch_round;
+            ++glo_smc_info.pml_lru_timestamp;
             remain_time = (remain_time < capture_time ) ? 0 : (remain_time - capture_time);
         }
 

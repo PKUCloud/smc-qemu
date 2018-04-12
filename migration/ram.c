@@ -1074,6 +1074,11 @@ static int ram_find_and_save_block(QEMUFile *f, bool last_stage,
     bool complete_round = false;
     int pages = 0;
     MemoryRegion *mr;
+#ifdef SMC_PML_PREFETCH
+    uint64_t lru_hash_value;
+    uint64_t lru_new_timestamp;
+    uint64_t lru_old_timestamp;
+#endif
 
     if (!block) {
         block = QLIST_FIRST_RCU(&ram_list.blocks);
@@ -1137,10 +1142,30 @@ static int ram_find_and_save_block(QEMUFile *f, bool last_stage,
                     }
                 }
 #endif
+
+#ifdef SMC_PML_PREFETCH
+                if (smc_is_init(&glo_smc_info)) {
+                    lru_hash_value = smc_pml_total_prefetched_map_lookup(&glo_smc_info,
+                                                              block->offset + offset);
+                    lru_new_timestamp = (((uint64_t)(glo_smc_info.pml_lru_timestamp)) << 32) & SMC_PML_NEW_LRU_MASK;
+                    if (lru_hash_value > 0) {
+                        lru_old_timestamp = ((lru_hash_value & SMC_PML_NEW_LRU_MASK) >> 32) & SMC_PML_OLD_LRU_MASK;
+                    } else {
+                        lru_old_timestamp = 0;
+                    }
+                    lru_hash_value = lru_new_timestamp | lru_old_timestamp;
+
+                    SMC_LOG(LRU, "checkpoint Page %#016lx, global counter %u, old_timestamp %lu, new_timestamp %lu", block->offset + offset, 
+                          glo_smc_info.pml_lru_timestamp, lru_old_timestamp, (lru_new_timestamp >> 32) & SMC_PML_OLD_LRU_MASK);
+
+                    smc_pml_total_prefetched_map_insert(&glo_smc_info, block->offset + offset,
+                                                  lru_hash_value);
+                }
+#endif                
                 pages = ram_save_page(f, block, offset, last_stage,
                                       bytes_transferred);
             }
-            
+
             /* if page is unmodified, continue to the next */
             if (pages > 0) {
                 last_sent_block = block;
@@ -1191,8 +1216,8 @@ static void smc_pml_ram_find_and_prefetch_block(void)
             }
             lru_hash_value = lru_new_timestamp | lru_old_timestamp;
 
-            // SMC_LOG(LRU, "Page %#016lx, global counter %u, old_timestamp %lu, new_timestamp %lu", block->offset + offset, 
-            //      glo_smc_info.pml_lru_timestamp, lru_old_timestamp, (lru_new_timestamp >> 32) & SMC_PML_OLD_LRU_MASK);
+            SMC_LOG(LRU, "Page %#016lx, global counter %u, old_timestamp %lu, new_timestamp %lu", block->offset + offset, 
+                  glo_smc_info.pml_lru_timestamp, lru_old_timestamp, (lru_new_timestamp >> 32) & SMC_PML_OLD_LRU_MASK);
 
             smc_pml_total_prefetched_map_insert(&glo_smc_info, block->offset + offset,
                                           lru_hash_value);

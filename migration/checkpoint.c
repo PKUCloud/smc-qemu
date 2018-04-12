@@ -1145,6 +1145,7 @@ static void *mc_thread(void *opaque)
         acct_clear();
         start_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
 
+        ++glo_smc_info.pml_lru_timestamp;
         if (capture_checkpoint(&mc, s) < 0) {
             break;
         }
@@ -1365,6 +1366,8 @@ static void *mc_thread(void *opaque)
                 break;
             }
             capture_start_time = qemu_clock_get_us(QEMU_CLOCK_REALTIME);
+            /* update lru_timestamp */
+            ++glo_smc_info.pml_lru_timestamp;
             smc_pml_capture_dirty_pages(&mc,s);
             if (prefetch_round > 0) {
                 smc_pml_send_prefetch_signal(f_opaque, false);
@@ -1375,7 +1378,6 @@ static void *mc_thread(void *opaque)
             smc_pml_send_prefetch_info(f_opaque, &glo_smc_info);
             smc_pml_prefetch_pages_next_subset(&glo_smc_info);
             ++prefetch_round;
-            ++glo_smc_info.pml_lru_timestamp;
             remain_time = (remain_time < capture_time ) ? 0 : (remain_time - capture_time);
         }
 
